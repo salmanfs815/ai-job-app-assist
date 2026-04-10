@@ -1,0 +1,80 @@
+:root {
+  font-family: Arial, sans-serif;
+  color: #222;
+  background: #f8f9fb;
+}
+
+body {
+  margin: 0;
+}
+
+.container {
+  max-width: 900px;
+  margin: 2rem auto;
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+  padding: 1rem 1.2rem 2rem;
+}
+
+label {
+  display: block;
+  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+}
+
+textarea {
+  width: 100%;
+  min-height: 160px;
+  padding: 0.7rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+select {
+  padding: 0.5rem;
+  border-radius: 6px;
+}
+
+.row {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.6rem;
+}
+
+button {
+  padding: 0.6rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: #2563eb;
+  color: #fff;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+section {
+  margin-top: 1.4rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.card {
+  border: 1px solid #e3e3e3;
+  border-radius: 8px;
+  padding: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+pre {
+  white-space: pre-wrap;
+  background: #f3f4f6;
+  padding: 0.8rem;
+  border-radius: 8px;
+}
