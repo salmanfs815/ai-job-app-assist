@@ -12,6 +12,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Custom response headers are not readable from fetch() cross-origin unless exposed.
+    expose_headers=["X-Resume-OCR-Status"],
 )
 
 
