@@ -1,6 +1,6 @@
-# AI Job Application Assistant (Starter)
+# AI Job Application Assistant
 
-Full-stack starter app with:
+Full-stack app with:
 - FastAPI backend
 - Simple React frontend (Vite)
 - Postgres DB
@@ -12,6 +12,7 @@ Full-stack starter app with:
 - Extract and score keyword/skill alignment
 - Rewrite resume bullets for alignment
 - Generate tailored cover letters
+- Resume upload parsing for PDF/DOCX files
 
 ## Quick Start
 
@@ -19,7 +20,7 @@ Full-stack starter app with:
    ```bash
    cp .env.example .env
    ```
-2. Add your OpenAI key in `.env`.
+2. Add OpenAI API key in `.env`.
 3. Run:
    ```bash
    docker compose up --build
@@ -32,6 +33,12 @@ Full-stack starter app with:
 - `GET /health`
 - `POST /analyze`
 - `POST /cover-letter`
+- `POST /analyze-upload` (multipart form-data with `resume_file` or `resume_text`)
+- `POST /cover-letter-upload` (multipart form-data with `resume_file` or `resume_text`)
 
 ## Notes
 - If OpenAI key is not set, backend uses deterministic mock output so the UI remains testable.
+- Supported uploaded resume formats: `.pdf`, `.docx`.
+- Max upload size is configurable with `MAX_UPLOAD_BYTES` (default `5242880`, i.e. 5 MB).
+- OCR fallback for scanned PDFs is enabled by default (`ENABLE_PDF_OCR_FALLBACK=true`) and uses Tesseract.
+- Set `TESSERACT_CMD` only if your environment needs a custom Tesseract binary path.
