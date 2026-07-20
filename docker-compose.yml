@@ -1,32 +1,18 @@
+## Note: persistence is optional. Set PERSISTENCE_ENABLED=true and provide Cosmos or DATABASE_URL to enable.
 services:
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
-      POSTGRES_DB: ${POSTGRES_DB:-jobassist}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-jobassist}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   backend:
     build:
       context: ./backend
     env_file:
       - .env
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://app:app@db:5432/jobassist}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
-    depends_on:
-      db:
-        condition: service_healthy
+      PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-false}
+      COSMOS_ENDPOINT: ${COSMOS_ENDPOINT:-}
+      COSMOS_KEY: ${COSMOS_KEY:-}
+      COSMOS_DATABASE_NAME: ${COSMOS_DATABASE_NAME:-jobassist}
+      COSMOS_CONTAINER_NAME: ${COSMOS_CONTAINER_NAME:-results}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 
@@ -40,6 +26,3 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
-
-volumes:
-  pgdata:

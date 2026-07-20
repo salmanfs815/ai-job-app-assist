@@ -4,18 +4,64 @@ A full-stack application that helps automate and improve the process of tailorin
 
 ## Quick Start
 
-1. Copy env file:
+1. Copy the environment template:
    ```bash
    cp .env.example .env
    ```
-2. Add OpenAI API key in `.env`.
-3. Run:
+2. Add your OpenAI API key to `.env`.
+3. For a simple local run without persistence, keep:
+   ```env
+   PERSISTENCE_ENABLED=false
+   ```
+4. Start the app (containers):
    ```bash
    docker compose up --build
    ```
-4. Open:
-   - Frontend: http://localhost:3000
-   - Backend docs: http://localhost:8000/docs
+
+Open:
+- Frontend: http://localhost:3000
+- Backend docs: http://localhost:8000/docs
+
+## Development workflow with live reload
+
+For day-to-day development, run the frontend and backend locally so changes appear instantly in the browser.
+
+### 1. Backend (FastAPI) with auto-reload
+```bash
+cd backend
+py -3 -m venv .venv
+\.venv\Scripts\Activate.ps1   # Windows PowerShell
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Set `PERSISTENCE_ENABLED=false` (default) in `.env` to disable persistence, or set it to `true` and provide Cosmos connection values.
+
+### 3. Frontend (React + Vite) with HMR
+```bash
+cd frontend
+npm install
+npm run dev -- --host 0.0.0.0 --port 3000
+```
+
+Open `http://localhost:3000` to see the app. Vite provides hot module replacement for frontend changes; `uvicorn --reload` reloads backend on Python file changes.
+
+### Notes about persistence
+- Persistence is optional and disabled by default to keep local development simple and inexpensive.
+- When `PERSISTENCE_ENABLED=true`, the app uses Azure Cosmos DB (NoSQL) for storing JSON results. Configure the Cosmos variables in `.env`.
+
+## Persistence and Azure Cosmos DB
+
+The app supports optional persistence through Azure Cosmos DB for NoSQL. To enable Cosmos persistence, set:
+```env
+PERSISTENCE_ENABLED=true
+COSMOS_ENDPOINT=https://<your-account>.documents.azure.com:443/
+COSMOS_KEY=your_cosmos_key
+COSMOS_DATABASE_NAME=jobassist
+COSMOS_CONTAINER_NAME=results
+```
+
+When persistence is disabled, the app works normally and simply skips saving analysis and cover-letter results.
 
 ## Overview
 
@@ -86,7 +132,7 @@ Processing Layer
         ↓
 OpenAI API (LLM)
         ↓
-PostgreSQL (Persistence)
+      Optional persistence: Azure Cosmos DB (NoSQL)
 ```
 
 ## Tech Stack
@@ -94,7 +140,7 @@ PostgreSQL (Persistence)
 **Backend**
 - Python
 - FastAPI
-- PostgreSQL
+- Optional persistence: Azure Cosmos DB (NoSQL)
 
 **Frontend**
 - React (Vite)

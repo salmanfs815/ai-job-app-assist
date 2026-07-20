@@ -9,8 +9,8 @@ from app.config import settings
 def _mock_analyze() -> str:
     return json.dumps(
         {
-            "extracted_keywords": ["Python", "FastAPI", "PostgreSQL", "AWS"],
-            "matched_skills": ["Python", "PostgreSQL"],
+            "extracted_keywords": ["Python", "FastAPI", "Cloud" , "AWS"],
+            "matched_skills": ["Python", "Cloud"],
             "missing_skills": ["FastAPI", "AWS"],
             "rewritten_bullets": [
                 {

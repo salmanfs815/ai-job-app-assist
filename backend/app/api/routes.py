@@ -1,8 +1,6 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, File, Form, HTTPException, Response, UploadFile
 
 from app.config import settings
-from app.db.database import SessionLocal
 from app.db.repository import save_analysis, save_cover_letter
 from app.models.schemas import (
     AnalyzeRequest,
@@ -16,14 +14,6 @@ from app.services.matching import build_suggestions, compute_match_score
 from app.services.resume_tailor import analyze_resume_against_jd
 
 router = APIRouter()
-
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def _resolve_resume_text(resume_text: str | None, resume_file: UploadFile | None) -> tuple[str, OcrStatus]:
@@ -58,7 +48,7 @@ def health() -> dict[str, str]:
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
-def analyze(payload: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeResponse:
+def analyze(payload: AnalyzeRequest) -> AnalyzeResponse:
     llm_result = analyze_resume_against_jd(payload.resume_text, payload.job_description_text, payload.tone or "professional")
     score = compute_match_score(llm_result.matched_skills, llm_result.missing_skills, llm_result.extracted_keywords)
     suggestions = build_suggestions(llm_result.missing_skills, llm_result.rewritten_bullets)
@@ -74,7 +64,6 @@ def analyze(payload: AnalyzeRequest, db: Session = Depends(get_db)) -> AnalyzeRe
     )
 
     save_analysis(
-        db=db,
         resume_text=payload.resume_text,
         job_description_text=payload.job_description_text,
         extracted_keywords=response.extracted_keywords,
@@ -92,7 +81,6 @@ def analyze_upload(
     resume_text: str | None = Form(None),
     resume_file: UploadFile | None = File(None),
     http_response: Response = None,
-    db: Session = Depends(get_db),
 ) -> AnalyzeResponse:
     resolved_resume, ocr_status = _resolve_resume_text(resume_text, resume_file)
     if http_response is not None:
@@ -115,7 +103,6 @@ def analyze_upload(
     )
 
     save_analysis(
-        db=db,
         resume_text=resolved_resume,
         job_description_text=job_description_text,
         extracted_keywords=api_response.extracted_keywords,
@@ -127,7 +114,7 @@ def analyze_upload(
 
 
 @router.post("/cover-letter", response_model=CoverLetterResponse)
-def cover_letter(payload: CoverLetterRequest, db: Session = Depends(get_db)) -> CoverLetterResponse:
+def cover_letter(payload: CoverLetterRequest) -> CoverLetterResponse:
     text = generate_cover_letter(
         resume_text=payload.resume_text,
         job_description_text=payload.job_description_text,
@@ -137,7 +124,6 @@ def cover_letter(payload: CoverLetterRequest, db: Session = Depends(get_db)) -> 
     )
 
     save_cover_letter(
-        db=db,
         company_name=payload.company_name,
         role_title=payload.role_title,
         tone=payload.tone or "professional",
@@ -156,7 +142,6 @@ def cover_letter_upload(
     resume_text: str | None = Form(None),
     resume_file: UploadFile | None = File(None),
     http_response: Response = None,
-    db: Session = Depends(get_db),
 ) -> CoverLetterResponse:
     resolved_resume, ocr_status = _resolve_resume_text(resume_text, resume_file)
     if http_response is not None:
@@ -175,7 +160,6 @@ def cover_letter_upload(
     )
 
     save_cover_letter(
-        db=db,
         company_name=company_name,
         role_title=role_title,
         tone=tone or "professional",

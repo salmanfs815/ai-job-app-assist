@@ -2,7 +2,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+psycopg://app:app@db:5432/jobassist"
+    persistence_enabled: bool = False
+    cosmos_endpoint: str = ""
+    cosmos_key: str = ""
+    cosmos_database_name: str = "jobassist"
+    cosmos_container_name: str = "results"
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
     max_upload_bytes: int = 5 * 1024 * 1024
