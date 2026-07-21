@@ -1,7 +1,11 @@
 from datetime import datetime, timezone
+import logging
 from typing import Any
 
 from app.config import settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class _NoopPersistence:
@@ -97,6 +101,7 @@ def save_analysis(
             result_payload=result_payload,
         )
     except Exception:
+        logger.exception("Failed to persist analysis result to Cosmos DB.")
         return None
 
 
@@ -117,4 +122,5 @@ def save_cover_letter(
             generated_text=generated_text,
         )
     except Exception:
+        logger.exception("Failed to persist cover-letter result to Cosmos DB.")
         return None

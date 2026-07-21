@@ -37,7 +37,7 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 Set `PERSISTENCE_ENABLED=false` (default) in `.env` to disable persistence, or set it to `true` and provide Cosmos connection values.
 
-### 3. Frontend (React + Vite) with HMR
+### 2. Frontend (React + Vite) with HMR
 ```bash
 cd frontend
 npm install

@@ -1,4 +1,9 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+PROJECT_ROOT_ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -13,7 +18,7 @@ class Settings(BaseSettings):
     enable_pdf_ocr_fallback: bool = True
     tesseract_cmd: str = ""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=PROJECT_ROOT_ENV_FILE, extra="ignore")
 
 
 settings = Settings()
