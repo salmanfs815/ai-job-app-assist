@@ -1,0 +1,54 @@
+name: Build and push backend image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/build-push-backend.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  IMAGE_NAME: ai-job-assist-backend
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get ACR login server
+        id: acr
+        shell: bash
+        run: |
+          LOGIN_SERVER=$(az acr show \
+            --name "${{ vars.ACR_NAME }}" \
+            --query loginServer \
+            --output tsv)
+          echo "login-server=$LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to ACR
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - name: Build and push backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ steps.acr.outputs.login-server }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ steps.acr.outputs.login-server }}/${{ env.IMAGE_NAME }}:latest
