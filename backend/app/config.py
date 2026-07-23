@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     cosmos_container_name: str = "results"
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
+    frontend_origin: str = "http://localhost:3000"
     max_upload_bytes: int = 5 * 1024 * 1024
     enable_pdf_ocr_fallback: bool = True
     tesseract_cmd: str = ""
