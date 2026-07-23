@@ -34,7 +34,7 @@ jobs:
           ###### End of Repository/Build Configurations ######
         env:
           VITE_API_BASE_URL: https://ai-job-assist-backend.thankfulpond-5f7d0b4f.westus2.azurecontainerapps.io
-          VITE_MAX_UPLOAD_BYTES: ${{ env.MAX_UPLOAD_BYTES:-5242880 }}
+          VITE_MAX_UPLOAD_BYTES: 5242880
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
