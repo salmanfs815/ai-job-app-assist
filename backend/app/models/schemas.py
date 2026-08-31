@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -29,6 +31,11 @@ class AnalyzeResponse(BaseModel):
     rewritten_bullets: list[RewriteBullet]
     suggestions: list[str]
     summary: str
+
+
+class ResumeExtractResponse(BaseModel):
+    resume_text: str
+    ocr_status: Literal["used", "failed", "not_used"]
 
 
 class CoverLetterRequest(BaseModel):

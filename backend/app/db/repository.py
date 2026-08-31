@@ -15,6 +15,9 @@ class _NoopPersistence:
     def save_cover_letter(self, **_: Any) -> None:
         return None
 
+    def save_resume_suggestions(self, **_: Any) -> None:
+        return None
+
 
 class _CosmosPersistence:
     def __init__(self) -> None:
@@ -78,6 +81,26 @@ class _CosmosPersistence:
         }
         self._container.upsert_item(body=document)
 
+    def save_resume_suggestions(
+        self,
+        *,
+        resume_text: str,
+        job_description_text: str,
+        tone: str,
+        generated_markdown: str,
+    ) -> None:
+        self._ensure_container()
+        document = {
+            "id": f"resume-suggestions-{datetime.now(timezone.utc).timestamp()}",
+            "type": "resume_suggestions",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "resume_text": resume_text,
+            "job_description_text": job_description_text,
+            "tone": tone,
+            "generated_markdown": generated_markdown,
+        }
+        self._container.upsert_item(body=document)
+
 
 _persistence = _CosmosPersistence() if settings.persistence_enabled else _NoopPersistence()
 
@@ -123,4 +146,25 @@ def save_cover_letter(
         )
     except Exception:
         logger.exception("Failed to persist cover-letter result to Cosmos DB.")
+        return None
+
+
+def save_resume_suggestions(
+    resume_text: str,
+    job_description_text: str,
+    tone: str,
+    generated_markdown: str,
+) -> None:
+    if not settings.persistence_enabled:
+        return None
+
+    try:
+        _persistence.save_resume_suggestions(
+            resume_text=resume_text,
+            job_description_text=job_description_text,
+            tone=tone,
+            generated_markdown=generated_markdown,
+        )
+    except Exception:
+        logger.exception("Failed to persist resume-suggestions result to Cosmos DB.")
         return None
