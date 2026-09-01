@@ -42,7 +42,7 @@ In recent work, I designed API layers, strengthened data workflows, and focused 
 
 I would welcome the opportunity to bring that same rigor and execution to your team. Thank you for your time and consideration.
 
-Sincerely,  
+Sincerely,
 Your Name
 """
 

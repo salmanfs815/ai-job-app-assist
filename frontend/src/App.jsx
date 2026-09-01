@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+import { consumeEventStream, sha256File } from "./streaming";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const MAX_UPLOAD_BYTES = Number(import.meta.env.VITE_MAX_UPLOAD_BYTES || "5242880");
@@ -8,255 +12,317 @@ export default function App() {
   const [resumeFile, setResumeFile] = useState(null);
   const [jobDescriptionText, setJobDescriptionText] = useState("");
   const [tone, setTone] = useState("professional");
-  const [result, setResult] = useState(null);
+  const [resumeSuggestions, setResumeSuggestions] = useState("");
   const [coverLetter, setCoverLetter] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [activeAction, setActiveAction] = useState(null);
+  const [extracting, setExtracting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [ocrHint, setOcrHint] = useState("");
   const [ocrStatus, setOcrStatus] = useState("");
+  const [demoMode, setDemoMode] = useState(false);
+
+  const resumeCacheRef = useRef(new Map());
+  const fileInputRef = useRef(null);
+  const extractionAbortRef = useRef(null);
+  const generationAbortRef = useRef(null);
 
   const canSubmit = useMemo(
-    () =>
-      (resumeText.trim().length > 20 || !!resumeFile) &&
-      jobDescriptionText.trim().length > 20,
-    [resumeText, resumeFile, jobDescriptionText]
+    () => resumeText.trim().length > 20 && jobDescriptionText.trim().length > 20 && !extracting,
+    [resumeText, jobDescriptionText, extracting]
   );
 
-  async function handleAnalyze() {
-    setLoading(true);
-    setResult(null);
+  async function handleResumeFile(file) {
+    extractionAbortRef.current?.abort();
     setErrorMessage("");
     setOcrHint("");
     setOcrStatus("");
+
+    if (!file) return;
+    const fileError = validateFileSize(file);
+    if (fileError) {
+      clearResumeFile(false);
+      setErrorMessage(fileError);
+      return;
+    }
+
+    const controller = new AbortController();
+    extractionAbortRef.current = controller;
+    setResumeFile(file);
+    setExtracting(true);
+    setStatusMessage("Reading resume…");
+
     try {
-      let res;
-      if (resumeFile) {
-        const fileError = validateFileSize(resumeFile);
-        if (fileError) throw new Error(fileError);
-        const formData = new FormData();
-        formData.append("resume_file", resumeFile);
-        formData.append("job_description_text", jobDescriptionText);
-        formData.append("tone", tone);
-        if (resumeText.trim()) formData.append("resume_text", resumeText);
-        res = await fetch(`${API_BASE}/analyze-upload`, {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        res = await fetch(`${API_BASE}/analyze`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resume_text: resumeText,
-            job_description_text: jobDescriptionText,
-            tone,
-          }),
-        });
+      const hash = await sha256File(file);
+      const cached = resumeCacheRef.current.get(hash);
+      if (cached) {
+        setResumeText(cached.resumeText);
+        setOcrStatus(cached.ocrStatus);
+        setOcrHint(buildOcrHint(cached.ocrStatus));
+        setStatusMessage("Resume ready (reused from this page session).");
+        return;
       }
 
-      if (!res.ok) throw new Error(await extractApiError(res, "Analysis failed"));
-      const status = getOcrStatus(res);
-      setOcrStatus(status);
-      setOcrHint(buildOcrHint(status));
-      setResult(await res.json());
-    } catch (err) {
-      setErrorMessage(err.message || "Request failed");
-    } finally {
-      setLoading(false);
-    }
-  }
+      const formData = new FormData();
+      formData.append("resume_file", file);
+      const response = await fetch(`${API_BASE}/resume/extract`, {
+        method: "POST",
+        body: formData,
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await extractApiError(response, "Resume extraction failed"));
 
-  async function handleCoverLetter() {
-    setLoading(true);
-    setCoverLetter("");
-    setErrorMessage("");
-    setOcrHint("");
-    setOcrStatus("");
-    try {
-      let res;
-      if (resumeFile) {
-        const fileError = validateFileSize(resumeFile);
-        if (fileError) throw new Error(fileError);
-        const formData = new FormData();
-        formData.append("resume_file", resumeFile);
-        formData.append("job_description_text", jobDescriptionText);
-        formData.append("company_name", "Target Company");
-        formData.append("role_title", "Software Engineer");
-        formData.append("tone", tone);
-        if (resumeText.trim()) formData.append("resume_text", resumeText);
-        res = await fetch(`${API_BASE}/cover-letter-upload`, {
-          method: "POST",
-          body: formData,
-        });
-      } else {
-        res = await fetch(`${API_BASE}/cover-letter`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            resume_text: resumeText,
-            job_description_text: jobDescriptionText,
-            company_name: "Target Company",
-            role_title: "Software Engineer",
-            tone,
-          }),
-        });
-      }
-
-      if (!res.ok) throw new Error(await extractApiError(res, "Cover letter generation failed"));
-      const status = getOcrStatus(res);
-      setOcrStatus(status);
-      setOcrHint(buildOcrHint(status));
-      const data = await res.json();
-      setCoverLetter(data.cover_letter);
-    } catch (err) {
-      setErrorMessage(err.message || "Request failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function extractApiError(response, fallback) {
-    try {
       const data = await response.json();
-      if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
-      if (Array.isArray(data?.detail) && data.detail.length > 0) {
-        return data.detail.map((d) => d?.msg || JSON.stringify(d)).join("; ");
+      resumeCacheRef.current.set(hash, { resumeText: data.resume_text, ocrStatus: data.ocr_status });
+      setResumeText(data.resume_text);
+      setOcrStatus(data.ocr_status);
+      setOcrHint(buildOcrHint(data.ocr_status));
+      setStatusMessage("Resume ready. Review or edit the extracted text below.");
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setResumeFile(null);
+        setStatusMessage("");
+        setErrorMessage(error.message || "Resume extraction failed");
       }
-    } catch (_e) {
-      // Ignore parse failures and use fallback.
+    } finally {
+      if (extractionAbortRef.current === controller) {
+        extractionAbortRef.current = null;
+        setExtracting(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
     }
-    return fallback;
   }
 
-  function validateFileSize(file) {
-    if (!file) return "";
-    if (file.size > MAX_UPLOAD_BYTES) {
-      return `File is too large (${formatBytes(file.size)}). Max allowed is ${formatBytes(MAX_UPLOAD_BYTES)}.`;
+  function clearResumeFile(clearText = true) {
+    extractionAbortRef.current?.abort();
+    extractionAbortRef.current = null;
+    setResumeFile(null);
+    if (clearText) setResumeText("");
+    setOcrStatus("");
+    setOcrHint("");
+    setStatusMessage("");
+    setExtracting(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  function createFrameAppender(setValue) {
+    let pending = "";
+    let frameId = null;
+    function flush() {
+      frameId = null;
+      if (!pending) return;
+      const text = pending;
+      pending = "";
+      setValue((current) => current + text);
     }
-    return "";
+    return {
+      append(text) {
+        pending += text;
+        if (frameId === null) frameId = requestAnimationFrame(flush);
+      },
+      flushNow() {
+        if (frameId !== null) cancelAnimationFrame(frameId);
+        flush();
+      },
+    };
   }
 
-  function getOcrStatus(response) {
-    return response.headers.get("X-Resume-OCR-Status") || "";
-  }
+  async function runGeneration(action) {
+    generationAbortRef.current?.abort();
+    const controller = new AbortController();
+    generationAbortRef.current = controller;
+    const isResume = action === "resume";
+    const setOutput = isResume ? setResumeSuggestions : setCoverLetter;
+    const appender = createFrameAppender(setOutput);
+    let streamedError = null;
 
-  function buildOcrHint(status) {
-    if (status === "used") {
-      return "OCR fallback was used to extract text from your scanned PDF resume.";
+    setActiveAction(action);
+    setOutput("");
+    setErrorMessage("");
+    setDemoMode(false);
+    setStatusMessage(isResume ? "Preparing resume suggestions…" : "Preparing cover letter…");
+
+    const url = isResume ? "/generate/resume-suggestions" : "/generate/cover-letter";
+    const body = {
+      resume_text: resumeText,
+      job_description_text: jobDescriptionText,
+      tone,
+      ...(isResume ? {} : { company_name: "Target Company", role_title: "Software Engineer" }),
+    };
+
+    try {
+      const response = await fetch(`${API_BASE}${url}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(await extractApiError(response, "Generation failed"));
+
+      await consumeEventStream(response, (event, data) => {
+        if (event === "status") {
+          setStatusMessage(data.message || "Generating…");
+          setDemoMode(Boolean(data.demo));
+        } else if (event === "delta") {
+          appender.append(data.text || "");
+          setStatusMessage(isResume ? "Generating resume suggestions…" : "Drafting cover letter…");
+        } else if (event === "done") {
+          setDemoMode(Boolean(data.demo));
+          setStatusMessage(isResume ? "Resume suggestions ready." : "Cover letter ready.");
+        } else if (event === "error") {
+          streamedError = new Error(data.message || "Generation failed");
+        }
+      });
+      if (streamedError) throw streamedError;
+    } catch (error) {
+      if (error.name === "AbortError") {
+        setStatusMessage("Generation stopped.");
+      } else {
+        setStatusMessage("");
+        setErrorMessage(error.message || "Request failed");
+      }
+    } finally {
+      appender.flushNow();
+      if (generationAbortRef.current === controller) generationAbortRef.current = null;
+      setActiveAction(null);
     }
-    if (status === "failed") {
-      return "OCR fallback could not extract text from the uploaded resume. Text input was used instead.";
-    }
-    return "";
-  }
-
-  function getOcrBadgeLabel(status) {
-    if (status === "used") return "OCR used";
-    if (status === "failed") return "OCR failed";
-    if (status === "not_used") return "OCR not needed";
-    return "";
-  }
-
-  function formatBytes(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   return (
     <div className="container">
       <h1>AI Job Application Assistant</h1>
-      <p>Paste your resume and job description to get a match analysis.</p>
-      {errorMessage && <div className="error-box">{errorMessage}</div>}
+      <p>Use your resume and a job description to get tailored suggestions or draft a cover letter.</p>
+
+      {errorMessage && <div className="error-box" role="alert">{errorMessage}</div>}
       {ocrHint && <div className="hint-box">{ocrHint}</div>}
+      {statusMessage && (
+        <div className="status-box" role="status" aria-live="polite">
+          {(extracting || activeAction) && <span className="spinner" aria-hidden="true" />}
+          <span>{statusMessage}</span>
+          {demoMode && <span className="demo-badge">Demo output</span>}
+        </div>
+      )}
 
       <label>Resume</label>
-      <label htmlFor="resume-file-input" className="file-upload-btn">
-        Upload Resume (PDF/DOCX)
-      </label>
+      <div className="file-controls">
+        <label htmlFor="resume-file-input" className="file-upload-btn">
+          {resumeFile ? "Replace Resume" : "Upload Resume (PDF/DOCX)"}
+        </label>
+        {resumeFile && (
+          <button type="button" className="secondary-btn" onClick={() => clearResumeFile()} disabled={extracting || !!activeAction}>
+            Remove
+          </button>
+        )}
+      </div>
       <input
+        ref={fileInputRef}
         id="resume-file-input"
         className="file-input-hidden"
         type="file"
         accept=".pdf,.docx"
-        onChange={(e) => {
-          const file = e.target.files?.[0] || null;
-          const fileError = validateFileSize(file);
-          if (fileError) {
-            setResumeFile(null);
-            setErrorMessage(fileError);
-            setOcrHint("");
-            setOcrStatus("");
-            return;
-          }
-          setResumeFile(file);
-          setErrorMessage("");
-          setOcrHint("");
-          setOcrStatus("");
-        }}
+        disabled={extracting || !!activeAction}
+        onChange={(event) => handleResumeFile(event.target.files?.[0] || null)}
       />
-      {resumeFile && <p>Using uploaded file: {resumeFile.name}</p>}
+      {resumeFile && <p className="file-name">Using uploaded file: {resumeFile.name}</p>}
       <textarea
+        aria-label="Resume text"
         value={resumeText}
-        onChange={(e) => setResumeText(e.target.value)}
-        placeholder="Paste resume text (optional when file uploaded)"
+        onChange={(event) => setResumeText(event.target.value)}
+        placeholder="Paste resume text, or upload a PDF/DOCX to extract it"
+        disabled={extracting}
       />
 
       <label>Job Description</label>
       <textarea
+        aria-label="Job description"
         value={jobDescriptionText}
-        onChange={(e) => setJobDescriptionText(e.target.value)}
+        onChange={(event) => setJobDescriptionText(event.target.value)}
         placeholder="Paste job description text"
       />
 
       <label>Tone</label>
-      <select value={tone} onChange={(e) => setTone(e.target.value)}>
+      <select value={tone} onChange={(event) => setTone(event.target.value)}>
         <option value="professional">Professional</option>
         <option value="concise">Concise</option>
         <option value="confident">Confident</option>
       </select>
 
       <div className="row">
-        <button disabled={!canSubmit || loading} onClick={handleAnalyze}>
-          {loading ? "Working..." : "Analyze Match"}
+        <button disabled={!canSubmit || !!activeAction} onClick={() => runGeneration("resume")}>
+          {activeAction === "resume" ? "Generating suggestions…" : "Get Resume Suggestions"}
         </button>
-        <button disabled={!canSubmit || loading} onClick={handleCoverLetter}>
-          {loading ? "Working..." : "Generate Cover Letter"}
+        <button disabled={!canSubmit || !!activeAction} onClick={() => runGeneration("cover")}>
+          {activeAction === "cover" ? "Drafting cover letter…" : "Generate Cover Letter"}
         </button>
+        {activeAction && <button type="button" className="stop-btn" onClick={() => generationAbortRef.current?.abort()}>Stop</button>}
       </div>
 
-      {result && (
-        <section>
-          <h2>Analysis</h2>
-          {getOcrBadgeLabel(ocrStatus) && (
-            <span className={`ocr-badge ocr-badge-${ocrStatus}`}>{getOcrBadgeLabel(ocrStatus)}</span>
-          )}
-          <p><strong>Match score:</strong> {result.match_score}/100</p>
-          <p><strong>Summary:</strong> {result.summary}</p>
-          <p><strong>Keywords:</strong> {result.extracted_keywords.join(", ")}</p>
-          <p><strong>Matched skills:</strong> {result.matched_skills.join(", ")}</p>
-          <p><strong>Missing skills:</strong> {result.missing_skills.join(", ")}</p>
-
-          <h3>Tailored Bullets</h3>
-          {result.rewritten_bullets.map((b, idx) => (
-            <div key={idx} className="card">
-              <p><strong>Original:</strong> {b.original}</p>
-              <p><strong>Tailored:</strong> {b.tailored}</p>
-              <p><strong>Why:</strong> {b.rationale}</p>
-            </div>
-          ))}
-        </section>
+      {resumeSuggestions && (
+        <MarkdownResult title="Resume Suggestions" value={resumeSuggestions} busy={activeAction === "resume"} ocrStatus={ocrStatus} />
       )}
-
       {coverLetter && (
-        <section>
-          <h2>Cover Letter</h2>
-          {getOcrBadgeLabel(ocrStatus) && (
-            <span className={`ocr-badge ocr-badge-${ocrStatus}`}>{getOcrBadgeLabel(ocrStatus)}</span>
-          )}
-          <pre>{coverLetter}</pre>
-        </section>
+        <MarkdownResult title="Cover Letter" value={coverLetter} busy={activeAction === "cover"} ocrStatus={ocrStatus} />
       )}
     </div>
   );
+}
+
+function MarkdownResult({ title, value, busy, ocrStatus }) {
+  return (
+    <section aria-busy={busy}>
+      <h2>{title}</h2>
+      {getOcrBadgeLabel(ocrStatus) && (
+        <span className={`ocr-badge ocr-badge-${ocrStatus}`}>{getOcrBadgeLabel(ocrStatus)}</span>
+      )}
+      <div className="markdown-body">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{ a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" /> }}
+        >
+          {value}
+        </ReactMarkdown>
+        {busy && <span className="stream-cursor" aria-hidden="true" />}
+      </div>
+    </section>
+  );
+}
+
+async function extractApiError(response, fallback) {
+  try {
+    const data = await response.json();
+    if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
+    if (Array.isArray(data?.detail) && data.detail.length > 0) {
+      return data.detail.map((detail) => detail?.msg || JSON.stringify(detail)).join("; ");
+    }
+  } catch (_error) {
+    // Use the caller's fallback for non-JSON errors.
+  }
+  return fallback;
+}
+
+function validateFileSize(file) {
+  if (!file) return "";
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return `File is too large (${formatBytes(file.size)}). Max allowed is ${formatBytes(MAX_UPLOAD_BYTES)}.`;
+  }
+  return "";
+}
+
+function buildOcrHint(status) {
+  if (status === "used") return "OCR fallback was used to extract text from your scanned PDF resume.";
+  if (status === "failed") return "OCR fallback could not extract enough text from the uploaded resume.";
+  return "";
+}
+
+function getOcrBadgeLabel(status) {
+  if (status === "used") return "OCR used";
+  if (status === "failed") return "OCR failed";
+  if (status === "not_used") return "OCR not needed";
+  return "";
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

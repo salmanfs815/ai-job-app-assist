@@ -88,8 +88,8 @@ It also serves as a deeper dive into:
 
 - Accepts resume input (PDF/DOCX or text)
 - Parses and extracts structured content
-- Analyzes job descriptions for key requirements
-- Computes and returns skill/keyword alignment
+- Streams a Markdown tailoring report as it is generated
+- Suggests supported changes to titles, summaries, skills, experience, section order, wording, and ATS alignment
 
 ### 2. Resume Bullet Optimization
 
@@ -103,6 +103,7 @@ It also serves as a deeper dive into:
   - resume content
   - job description
 - Ensures consistency between resume and narrative
+- Streams the draft to the browser as it is generated
 
 ### 4. File Parsing Pipeline
 
@@ -169,13 +170,32 @@ OpenAI API (LLM)
 
 ## API Endpoints
 - `GET /health`
-- `POST /analyze`
-- `POST /cover-letter`
-- `POST /analyze-upload` (multipart form-data with `resume_file` or `resume_text`)
-- `POST /cover-letter-upload` (multipart form-data with `resume_file` or `resume_text`)
+- `POST /resume/extract` (multipart form-data with `resume_file`)
+- `POST /generate/resume-suggestions` (JSON request; Server-Sent Events response)
+- `POST /generate/cover-letter` (JSON request; Server-Sent Events response)
+
+The generation endpoints return `text/event-stream`. Event types are:
+
+- `status`: immediate progress text and whether local demo output is active
+- `delta`: the next Markdown text fragment
+- `done`: successful completion
+- `error`: a safe error message plus `retryable` and `partial` flags
+
+The frontend proxies all generation through FastAPI; the OpenAI API key is never sent to the browser. Streamed Markdown is rendered without enabling raw HTML.
+
+### Resume reuse
+
+When a PDF or DOCX is selected, the browser computes a SHA-256 hash and extracts it through `/resume/extract`. The extracted text is shown in the resume textarea so it can be reviewed or edited. Selecting the same file again in the same page session reuses an in-memory cache and skips upload, parsing, and OCR. The cache is cleared on refresh and is never written to browser storage.
+
+This optimization saves file-processing work, but not LLM input tokens: the resolved resume text is still included in every generation request.
+
+### Legacy API rollout
+
+The previous `/analyze`, `/analyze-upload`, `/cover-letter`, and `/cover-letter-upload` endpoints remain temporarily available so the backend can be deployed before the streaming frontend. Remove them after the new frontend has been deployed and verified in production.
 
 ## Notes
 - If OpenAI key is not set, backend uses deterministic mock output so the UI remains testable.
+- If an OpenAI request fails while a key is configured, the stream reports an error instead of silently substituting mock content.
 - Supported uploaded resume formats: `.pdf`, `.docx`.
 - Max upload size is configurable with `MAX_UPLOAD_BYTES` (default `5242880`, i.e. 5 MB).
 - OCR fallback for scanned PDFs is enabled by default (`ENABLE_PDF_OCR_FALLBACK=true`) and uses Tesseract.
