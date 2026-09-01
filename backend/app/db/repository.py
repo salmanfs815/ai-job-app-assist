@@ -9,9 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class _NoopPersistence:
-    def save_analysis(self, **_: Any) -> None:
-        return None
-
     def save_cover_letter(self, **_: Any) -> None:
         return None
 
@@ -38,28 +35,6 @@ class _CosmosPersistence:
         client = CosmosClient(url=settings.cosmos_endpoint, credential=settings.cosmos_key)
         database = client.get_database_client(settings.cosmos_database_name)
         self._container = database.get_container_client(settings.cosmos_container_name)
-
-    def save_analysis(
-        self,
-        *,
-        resume_text: str,
-        job_description_text: str,
-        extracted_keywords: list[str],
-        match_score: int,
-        result_payload: dict,
-    ) -> None:
-        self._ensure_container()
-        document = {
-            "id": f"analysis-{datetime.now(timezone.utc).timestamp()}",
-            "type": "analysis",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "resume_text": resume_text,
-            "job_description_text": job_description_text,
-            "extracted_keywords": {"items": extracted_keywords},
-            "match_score": match_score,
-            "result_payload": result_payload,
-        }
-        self._container.upsert_item(body=document)
 
     def save_cover_letter(
         self,
@@ -103,29 +78,6 @@ class _CosmosPersistence:
 
 
 _persistence = _CosmosPersistence() if settings.persistence_enabled else _NoopPersistence()
-
-
-def save_analysis(
-    resume_text: str,
-    job_description_text: str,
-    extracted_keywords: list[str],
-    match_score: int,
-    result_payload: dict,
-) -> None:
-    if not settings.persistence_enabled:
-        return None
-
-    try:
-        _persistence.save_analysis(
-            resume_text=resume_text,
-            job_description_text=job_description_text,
-            extracted_keywords=extracted_keywords,
-            match_score=match_score,
-            result_payload=result_payload,
-        )
-    except Exception:
-        logger.exception("Failed to persist analysis result to Cosmos DB.")
-        return None
 
 
 def save_cover_letter(

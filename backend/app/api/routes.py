@@ -1,23 +1,18 @@
 import asyncio
 from collections.abc import AsyncIterator, Callable
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
-from app.db.repository import save_analysis, save_cover_letter, save_resume_suggestions
+from app.db.repository import save_cover_letter, save_resume_suggestions
 from app.models.schemas import (
-    AnalyzeRequest,
-    AnalyzeResponse,
     CoverLetterRequest,
-    CoverLetterResponse,
     ResumeExtractResponse,
+    ResumeSuggestionsRequest,
 )
-from app.services.cover_letter import generate_cover_letter
 from app.services.file_parsing import OcrStatus, extract_text_from_resume_file
-from app.services.matching import build_suggestions, compute_match_score
 from app.services.prompt_engineering import build_cover_letter_messages, build_resume_suggestions_messages
-from app.services.resume_tailor import analyze_resume_against_jd
 from app.services.streaming import (
     LLMStreamError,
     MOCK_COVER_LETTER,
@@ -45,26 +40,6 @@ def _extract_resume_upload(resume_file: UploadFile) -> tuple[str, OcrStatus]:
     if len(parsed.strip()) < 20:
         raise HTTPException(status_code=400, detail="Could not extract enough text from resume file.")
     return parsed.strip(), ocr_status
-
-
-def _resolve_resume_text(resume_text: str | None, resume_file: UploadFile | None) -> tuple[str, OcrStatus]:
-    if resume_file is not None:
-        try:
-            return _extract_resume_upload(resume_file)
-        except HTTPException as exc:
-            if (
-                exc.status_code == 400
-                and exc.detail == "Could not extract enough text from resume file."
-                and resume_text
-                and len(resume_text.strip()) >= 20
-            ):
-                return resume_text.strip(), "failed"
-            raise
-
-    if resume_text and len(resume_text.strip()) >= 20:
-        return resume_text.strip(), "not_used"
-
-    raise HTTPException(status_code=400, detail="Provide either resume_text or a PDF/DOCX resume_file.")
 
 
 def _stream_markdown_response(
@@ -140,7 +115,7 @@ def extract_resume(resume_file: UploadFile = File(...)) -> ResumeExtractResponse
 
 
 @router.post("/generate/resume-suggestions")
-async def generate_resume_suggestions(payload: AnalyzeRequest, request: Request) -> StreamingResponse:
+async def generate_resume_suggestions(payload: ResumeSuggestionsRequest, request: Request) -> StreamingResponse:
     tone = payload.tone or "professional"
     messages = build_resume_suggestions_messages(payload.resume_text, payload.job_description_text, tone)
     return _stream_markdown_response(
@@ -181,125 +156,3 @@ async def generate_cover_letter_stream(payload: CoverLetterRequest, request: Req
             generated_text=markdown,
         ),
     )
-
-
-@router.post("/analyze", response_model=AnalyzeResponse)
-def analyze(payload: AnalyzeRequest) -> AnalyzeResponse:
-    llm_result = analyze_resume_against_jd(payload.resume_text, payload.job_description_text, payload.tone or "professional")
-    score = compute_match_score(llm_result.matched_skills, llm_result.missing_skills, llm_result.extracted_keywords)
-    suggestions = build_suggestions(llm_result.missing_skills, llm_result.rewritten_bullets)
-
-    response = AnalyzeResponse(
-        extracted_keywords=llm_result.extracted_keywords,
-        matched_skills=llm_result.matched_skills,
-        missing_skills=llm_result.missing_skills,
-        match_score=score,
-        rewritten_bullets=llm_result.rewritten_bullets,
-        suggestions=suggestions,
-        summary=llm_result.summary,
-    )
-
-    save_analysis(
-        resume_text=payload.resume_text,
-        job_description_text=payload.job_description_text,
-        extracted_keywords=response.extracted_keywords,
-        match_score=response.match_score,
-        result_payload=response.model_dump(),
-    )
-
-    return response
-
-
-@router.post("/analyze-upload", response_model=AnalyzeResponse)
-def analyze_upload(
-    job_description_text: str = Form(...),
-    tone: str = Form("professional"),
-    resume_text: str | None = Form(None),
-    resume_file: UploadFile | None = File(None),
-    http_response: Response = None,
-) -> AnalyzeResponse:
-    resolved_resume, ocr_status = _resolve_resume_text(resume_text, resume_file)
-    if http_response is not None:
-        http_response.headers["X-Resume-OCR-Status"] = ocr_status
-    if len(job_description_text.strip()) < 20:
-        raise HTTPException(status_code=400, detail="job_description_text must be at least 20 characters.")
-
-    llm_result = analyze_resume_against_jd(resolved_resume, job_description_text, tone or "professional")
-    score = compute_match_score(llm_result.matched_skills, llm_result.missing_skills, llm_result.extracted_keywords)
-    suggestions = build_suggestions(llm_result.missing_skills, llm_result.rewritten_bullets)
-
-    api_response = AnalyzeResponse(
-        extracted_keywords=llm_result.extracted_keywords,
-        matched_skills=llm_result.matched_skills,
-        missing_skills=llm_result.missing_skills,
-        match_score=score,
-        rewritten_bullets=llm_result.rewritten_bullets,
-        suggestions=suggestions,
-        summary=llm_result.summary,
-    )
-
-    save_analysis(
-        resume_text=resolved_resume,
-        job_description_text=job_description_text,
-        extracted_keywords=api_response.extracted_keywords,
-        match_score=api_response.match_score,
-        result_payload=api_response.model_dump(),
-    )
-
-    return api_response
-
-
-@router.post("/cover-letter", response_model=CoverLetterResponse)
-def cover_letter(payload: CoverLetterRequest) -> CoverLetterResponse:
-    text = generate_cover_letter(
-        resume_text=payload.resume_text,
-        job_description_text=payload.job_description_text,
-        company_name=payload.company_name,
-        role_title=payload.role_title,
-        tone=payload.tone or "professional",
-    )
-
-    save_cover_letter(
-        company_name=payload.company_name,
-        role_title=payload.role_title,
-        tone=payload.tone or "professional",
-        generated_text=text,
-    )
-
-    return CoverLetterResponse(cover_letter=text)
-
-
-@router.post("/cover-letter-upload", response_model=CoverLetterResponse)
-def cover_letter_upload(
-    job_description_text: str = Form(...),
-    company_name: str = Form(...),
-    role_title: str = Form(...),
-    tone: str = Form("professional"),
-    resume_text: str | None = Form(None),
-    resume_file: UploadFile | None = File(None),
-    http_response: Response = None,
-) -> CoverLetterResponse:
-    resolved_resume, ocr_status = _resolve_resume_text(resume_text, resume_file)
-    if http_response is not None:
-        http_response.headers["X-Resume-OCR-Status"] = ocr_status
-    if len(job_description_text.strip()) < 20:
-        raise HTTPException(status_code=400, detail="job_description_text must be at least 20 characters.")
-    if len(company_name.strip()) < 2 or len(role_title.strip()) < 2:
-        raise HTTPException(status_code=400, detail="company_name and role_title are required.")
-
-    text = generate_cover_letter(
-        resume_text=resolved_resume,
-        job_description_text=job_description_text,
-        company_name=company_name,
-        role_title=role_title,
-        tone=tone or "professional",
-    )
-
-    save_cover_letter(
-        company_name=company_name,
-        role_title=role_title,
-        tone=tone or "professional",
-        generated_text=text,
-    )
-
-    return CoverLetterResponse(cover_letter=text)

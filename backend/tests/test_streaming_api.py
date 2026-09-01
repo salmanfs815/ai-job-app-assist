@@ -133,3 +133,12 @@ def test_resume_prompt_allows_whole_resume_changes_without_fabrication() -> None
     assert "professional summary" in system_prompt
     assert "Do not limit recommendations to experience bullets" in system_prompt
     assert "Never invent qualifications" in system_prompt
+
+
+def test_legacy_routes_are_removed() -> None:
+    paths = client.get("/openapi.json").json()["paths"]
+
+    assert "/analyze" not in paths
+    assert "/analyze-upload" not in paths
+    assert "/cover-letter" not in paths
+    assert "/cover-letter-upload" not in paths

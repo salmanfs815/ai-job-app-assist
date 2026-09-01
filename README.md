@@ -156,17 +156,9 @@ OpenAI API (LLM)
 ## How It Works
 
 1. User uploads a resume (PDF/DOCX) and provides a job description
-2. Backend:
-  - Parses resume content
-  - Extracts job requirements
-  - Constructs structured prompts
-3. LLM processes:
-  - Skill alignment
-  - Resume improvements
-  - Cover letter generation
-4. Backend:
-  - Validates and parses responses
-  - Returns structured output to frontend
+2. Backend parses the resume and constructs Markdown-generation prompts.
+3. The LLM generates resume improvements or a tailored cover letter.
+4. Backend streams Markdown fragments to the frontend and persists completed results.
 
 ## API Endpoints
 - `GET /health`
@@ -188,10 +180,6 @@ The frontend proxies all generation through FastAPI; the OpenAI API key is never
 When a PDF or DOCX is selected, the browser computes a SHA-256 hash and extracts it through `/resume/extract`. The extracted text is shown in the resume textarea so it can be reviewed or edited. Selecting the same file again in the same page session reuses an in-memory cache and skips upload, parsing, and OCR. The cache is cleared on refresh and is never written to browser storage.
 
 This optimization saves file-processing work, but not LLM input tokens: the resolved resume text is still included in every generation request.
-
-### Legacy API rollout
-
-The previous `/analyze`, `/analyze-upload`, `/cover-letter`, and `/cover-letter-upload` endpoints remain temporarily available so the backend can be deployed before the streaming frontend. Remove them after the new frontend has been deployed and verified in production.
 
 ## Notes
 - If OpenAI key is not set, backend uses deterministic mock output so the UI remains testable.
