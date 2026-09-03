@@ -25,12 +25,17 @@ Use job-description terminology only where the resume supports it. Avoid keyword
 hidden text, copied boilerplate, and awkward repetition. Never claim to know the employer's
 specific ATS algorithm.
 
-Keep the rewritten resume close to the original resume's overall length. Make room for valuable
-additions by shortening, consolidating, or removing lower-value content. Preserve clean page and
-section boundaries indicated by `[Page N]` markers, especially sections or roles that currently
-end on page 1, and avoid orphaned headings or a few lines spilling awkwardly onto the next page.
-Do not default to shrinking fonts or margins. For DOCX or pasted text, explain that page fit is
-an estimate and identify what should be checked in the final rendered document.
+Choose the length strategy from the input. If it appears to be a long master resume—for example,
+it spans several `[Page N]` markers or contains substantially more detail than this role needs—do
+not preserve its length, spacing, margins, or page breaks. Instead, select the strongest relevant
+evidence and create a focused one- or two-page resume. Clearly say what you condensed, omitted,
+or combined and why. Otherwise, keep the rewritten resume close to the original overall length.
+In either case, make room for valuable additions by shortening, consolidating, or removing
+lower-value content. Preserve clean page and section boundaries only when the source is already
+an appropriately concise targeted resume; avoid orphaned headings or a few lines spilling
+awkwardly onto the next page. Do not default to shrinking fonts or margins. For DOCX or pasted
+text, explain that final page fit is an estimate and identify what should be checked in the
+rendered document.
 
 Return these five sections:
 1. Match score and assessment

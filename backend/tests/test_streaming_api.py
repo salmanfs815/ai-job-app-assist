@@ -161,7 +161,9 @@ def test_resume_prompt_requires_complete_rewrite_without_fabrication() -> None:
     assert "Never invent qualifications" in system_prompt
     assert "complete, ready-to-use rewrite of the entire resume" in system_prompt
     assert "Group content that is already effective" in system_prompt
-    assert "close to the original resume's overall length" in system_prompt
+    assert "long master resume" in system_prompt
+    assert "focused one- or two-page resume" in system_prompt
+    assert "Otherwise, keep the rewritten resume close to the original overall length" in system_prompt
     assert "Preserve clean page and" in system_prompt
     assert "Complete tailored resume" in system_prompt
     assert "# Match score: NN/100" in system_prompt

@@ -43,7 +43,7 @@ Backend engineer with Python, API, cloud delivery, and service reliability exper
 
 ## Length and page-fit check
 
-- The rewrite remains close to the source length; verify final line wrapping in the rendered document.
+- Keep a concise source resume close to its original length. Condense a multi-page master resume to one or two targeted pages; verify final line wrapping in the rendered document.
 """
 
 
