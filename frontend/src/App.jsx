@@ -11,98 +11,114 @@ export default function App() {
   const [resumeText, setResumeText] = useState("");
   const [resumeFile, setResumeFile] = useState(null);
   const [jobDescriptionText, setJobDescriptionText] = useState("");
+  const [jobDescriptionFile, setJobDescriptionFile] = useState(null);
   const [tone, setTone] = useState("professional");
   const [resumeSuggestions, setResumeSuggestions] = useState("");
   const [coverLetter, setCoverLetter] = useState("");
   const [activeAction, setActiveAction] = useState(null);
-  const [extracting, setExtracting] = useState(false);
+  const [extractingTarget, setExtractingTarget] = useState(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [ocrHint, setOcrHint] = useState("");
   const [ocrStatus, setOcrStatus] = useState("");
   const [demoMode, setDemoMode] = useState(false);
 
-  const resumeCacheRef = useRef(new Map());
-  const fileInputRef = useRef(null);
+  const documentCacheRef = useRef(new Map());
+  const resumeFileInputRef = useRef(null);
+  const jobDescriptionFileInputRef = useRef(null);
   const extractionAbortRef = useRef(null);
   const generationAbortRef = useRef(null);
 
   const canSubmit = useMemo(
-    () => resumeText.trim().length > 20 && jobDescriptionText.trim().length > 20 && !extracting,
-    [resumeText, jobDescriptionText, extracting]
+    () => resumeText.trim().length > 20 && jobDescriptionText.trim().length > 20 && !extractingTarget,
+    [resumeText, jobDescriptionText, extractingTarget]
   );
 
-  async function handleResumeFile(file) {
+  async function handleDocumentFile(file, target) {
+    const isResume = target === "resume";
+    const label = isResume ? "resume" : "job description";
+    const setFile = isResume ? setResumeFile : setJobDescriptionFile;
+    const setText = isResume ? setResumeText : setJobDescriptionText;
+    const inputRef = isResume ? resumeFileInputRef : jobDescriptionFileInputRef;
     extractionAbortRef.current?.abort();
     setErrorMessage("");
     setOcrHint("");
-    setOcrStatus("");
+    if (isResume) setOcrStatus("");
 
     if (!file) return;
     const fileError = validateFileSize(file);
     if (fileError) {
-      clearResumeFile(false);
+      clearDocumentFile(target, false);
       setErrorMessage(fileError);
       return;
     }
 
     const controller = new AbortController();
     extractionAbortRef.current = controller;
-    setResumeFile(file);
-    setExtracting(true);
-    setStatusMessage("Reading resume…");
+    setFile(file);
+    setExtractingTarget(target);
+    setStatusMessage(`Reading ${label}…`);
 
     try {
       const hash = await sha256File(file);
-      const cached = resumeCacheRef.current.get(hash);
+      const cached = documentCacheRef.current.get(hash);
       if (cached) {
-        setResumeText(cached.resumeText);
-        setOcrStatus(cached.ocrStatus);
-        setOcrHint(buildOcrHint(cached.ocrStatus));
-        setStatusMessage("Resume ready (reused from this page session).");
+        setText(cached.text);
+        if (isResume) setOcrStatus(cached.ocrStatus);
+        setOcrHint(buildOcrHint(cached.ocrStatus, label));
+        setStatusMessage(`${isResume ? "Resume" : "Job description"} ready (reused from this page session).`);
         return;
       }
 
       const formData = new FormData();
-      formData.append("resume_file", file);
-      const response = await fetch(`${API_BASE}/resume/extract`, {
+      formData.append(isResume ? "resume_file" : "job_description_file", file);
+      const endpoint = isResume ? "/resume/extract" : "/job-description/extract";
+      const response = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         body: formData,
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(await extractApiError(response, "Resume extraction failed"));
+      if (!response.ok) throw new Error(await extractApiError(response, `${isResume ? "Resume" : "Job description"} extraction failed`));
 
       const data = await response.json();
-      resumeCacheRef.current.set(hash, { resumeText: data.resume_text, ocrStatus: data.ocr_status });
-      setResumeText(data.resume_text);
-      setOcrStatus(data.ocr_status);
-      setOcrHint(buildOcrHint(data.ocr_status));
-      setStatusMessage("Resume ready. Review or edit the extracted text below.");
+      const extractedText = isResume ? data.resume_text : data.job_description_text;
+      documentCacheRef.current.set(hash, { text: extractedText, ocrStatus: data.ocr_status });
+      setText(extractedText);
+      if (isResume) setOcrStatus(data.ocr_status);
+      setOcrHint(buildOcrHint(data.ocr_status, label));
+      setStatusMessage(`${isResume ? "Resume" : "Job description"} ready. Review or edit the extracted text below.`);
     } catch (error) {
       if (error.name !== "AbortError") {
-        setResumeFile(null);
+        setFile(null);
         setStatusMessage("");
-        setErrorMessage(error.message || "Resume extraction failed");
+        setErrorMessage(error.message || `${isResume ? "Resume" : "Job description"} extraction failed`);
       }
     } finally {
       if (extractionAbortRef.current === controller) {
         extractionAbortRef.current = null;
-        setExtracting(false);
-        if (fileInputRef.current) fileInputRef.current.value = "";
+        setExtractingTarget(null);
+        if (inputRef.current) inputRef.current.value = "";
       }
     }
   }
 
-  function clearResumeFile(clearText = true) {
+  function clearDocumentFile(target, clearText = true) {
+    const isResume = target === "resume";
+    const inputRef = isResume ? resumeFileInputRef : jobDescriptionFileInputRef;
     extractionAbortRef.current?.abort();
     extractionAbortRef.current = null;
-    setResumeFile(null);
-    if (clearText) setResumeText("");
-    setOcrStatus("");
+    if (isResume) {
+      setResumeFile(null);
+      if (clearText) setResumeText("");
+      setOcrStatus("");
+    } else {
+      setJobDescriptionFile(null);
+      if (clearText) setJobDescriptionText("");
+    }
     setOcrHint("");
     setStatusMessage("");
-    setExtracting(false);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    setExtractingTarget(null);
+    if (inputRef.current) inputRef.current.value = "";
   }
 
   function createFrameAppender(setValue) {
@@ -197,7 +213,7 @@ export default function App() {
       {ocrHint && <div className="hint-box">{ocrHint}</div>}
       {statusMessage && (
         <div className="status-box" role="status" aria-live="polite">
-          {(extracting || activeAction) && <span className="spinner" aria-hidden="true" />}
+          {(extractingTarget || activeAction) && <span className="spinner" aria-hidden="true" />}
           <span>{statusMessage}</span>
           {demoMode && <span className="demo-badge">Demo output</span>}
         </div>
@@ -209,19 +225,19 @@ export default function App() {
           {resumeFile ? "Replace Resume" : "Upload Resume (PDF/DOCX)"}
         </label>
         {resumeFile && (
-          <button type="button" className="secondary-btn" onClick={() => clearResumeFile()} disabled={extracting || !!activeAction}>
+          <button type="button" className="secondary-btn" onClick={() => clearDocumentFile("resume")} disabled={!!extractingTarget || !!activeAction}>
             Remove
           </button>
         )}
       </div>
       <input
-        ref={fileInputRef}
+        ref={resumeFileInputRef}
         id="resume-file-input"
         className="file-input-hidden"
         type="file"
         accept=".pdf,.docx"
-        disabled={extracting || !!activeAction}
-        onChange={(event) => handleResumeFile(event.target.files?.[0] || null)}
+        disabled={!!extractingTarget || !!activeAction}
+        onChange={(event) => handleDocumentFile(event.target.files?.[0] || null, "resume")}
       />
       {resumeFile && <p className="file-name">Using uploaded file: {resumeFile.name}</p>}
       <textarea
@@ -229,15 +245,36 @@ export default function App() {
         value={resumeText}
         onChange={(event) => setResumeText(event.target.value)}
         placeholder="Paste resume text, or upload a PDF/DOCX to extract it"
-        disabled={extracting}
+        disabled={!!extractingTarget}
       />
 
       <label>Job Description</label>
+      <div className="file-controls">
+        <label htmlFor="job-description-file-input" className="file-upload-btn">
+          {jobDescriptionFile ? "Replace Job Description" : "Upload Job Description (PDF/DOCX)"}
+        </label>
+        {jobDescriptionFile && (
+          <button type="button" className="secondary-btn" onClick={() => clearDocumentFile("job-description")} disabled={!!extractingTarget || !!activeAction}>
+            Remove
+          </button>
+        )}
+      </div>
+      <input
+        ref={jobDescriptionFileInputRef}
+        id="job-description-file-input"
+        className="file-input-hidden"
+        type="file"
+        accept=".pdf,.docx"
+        disabled={!!extractingTarget || !!activeAction}
+        onChange={(event) => handleDocumentFile(event.target.files?.[0] || null, "job-description")}
+      />
+      {jobDescriptionFile && <p className="file-name">Using uploaded file: {jobDescriptionFile.name}</p>}
       <textarea
         aria-label="Job description"
         value={jobDescriptionText}
         onChange={(event) => setJobDescriptionText(event.target.value)}
-        placeholder="Paste job description text"
+        placeholder="Paste job description text, or upload a PDF/DOCX to extract it"
+        disabled={!!extractingTarget}
       />
 
       <label>Tone</label>
@@ -308,9 +345,9 @@ function validateFileSize(file) {
   return "";
 }
 
-function buildOcrHint(status) {
-  if (status === "used") return "OCR fallback was used to extract text from your scanned PDF resume.";
-  if (status === "failed") return "OCR fallback could not extract enough text from the uploaded resume.";
+function buildOcrHint(status, label) {
+  if (status === "used") return `OCR fallback was used to extract text from your scanned PDF ${label}.`;
+  if (status === "failed") return `OCR fallback could not extract enough text from the uploaded ${label}.`;
   return "";
 }
 

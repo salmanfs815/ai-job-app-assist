@@ -8,29 +8,42 @@ from openai import APIConnectionError, APITimeoutError, APIStatusError, AsyncOpe
 from app.config import settings
 
 
-MOCK_RESUME_SUGGESTIONS = """# Resume Tailoring Report
+MOCK_RESUME_SUGGESTIONS = """# Match score: 78/100
 
-## Match overview
+This is an evidence-based estimate of resume-to-job alignment, not a guarantee of ATS or hiring results.
+
+## Match assessment
 
 Your backend experience is relevant, with the strongest alignment around Python, APIs, and cloud delivery.
 
-## Prioritized recommendations
+## Key strengths and gaps
+
+- **Strength:** Supported Python, API, and cloud delivery experience.
+- **Gap:** FastAPI is requested but is not demonstrated in the supplied resume.
+
+## Actionable section-by-section feedback
 
 1. **Headline:** Name the backend and API focus explicitly if that reflects your target role.
 2. **Summary:** Lead with supported Python, service reliability, and cross-functional delivery experience.
 3. **Experience:** Add outcomes to backend bullets where the resume provides defensible evidence.
 4. **Skills:** Surface FastAPI or AWS only if you have genuine experience that is not already visible.
 
-## Example rewrite
-
 - **Before:** Built backend services for internal tools.
 - **After:** Built Python API services and improved data workflows for internal product teams.
 
-## Final checklist
+## Complete tailored resume
 
-- Confirm every claimed skill is supported by your experience.
-- Mirror relevant job terminology naturally.
-- Put the most relevant accomplishments near the top of each role.
+### Backend Engineer
+
+Backend engineer with Python, API, cloud delivery, and service reliability experience.
+
+#### Experience
+
+- Built Python API services and improved data workflows for internal product teams.
+
+## Length and page-fit check
+
+- The rewrite remains close to the source length; verify final line wrapping in the rendered document.
 """
 
 

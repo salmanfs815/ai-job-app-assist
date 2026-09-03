@@ -69,6 +69,30 @@ describe("App", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it("uploads a PDF or DOCX job description and keeps the extracted text editable", async () => {
+    fetch.mockResolvedValue(jsonResponse({
+      job_description_text: "Seeking a senior integration lead with substantial SQL and ETL experience.",
+      ocr_status: "not_used",
+    }));
+    render(<App />);
+    const input = document.querySelector("#job-description-file-input");
+    const file = new File(["job description bytes"], "job-description.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByLabelText("Job description").value).toContain("senior integration lead"));
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/job-description/extract"),
+      expect.objectContaining({ method: "POST" })
+    );
+    fireEvent.change(screen.getByLabelText("Job description"), {
+      target: { value: "Edited job description text with enough detail for generation." },
+    });
+    expect(screen.getByLabelText("Job description")).toHaveValue("Edited job description text with enough detail for generation.");
+  });
+
   it("renders streamed Markdown resume suggestions", async () => {
     fetch.mockResolvedValue(streamResponse([
       ["status", { message: "Comparing…", demo: false }],

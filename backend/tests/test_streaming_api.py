@@ -6,6 +6,7 @@ from app.api import routes
 from app.config import settings
 from app.main import app
 from app.services.prompt_engineering import build_resume_suggestions_messages
+from app.services.file_parsing import _join_pdf_pages
 from app.services.streaming import LLMStreamError
 
 
@@ -18,6 +19,12 @@ def _analysis_payload() -> dict[str, str]:
         "job_description_text": "Seeking a backend engineer to build Python APIs and reliable cloud services.",
         "tone": "professional",
     }
+
+
+def test_pdf_page_markers_preserve_original_page_numbers() -> None:
+    extracted = _join_pdf_pages(["Page one content", "", "Page three content"])
+
+    assert extracted == "[Page 1]\nPage one content\n\n[Page 3]\nPage three content"
 
 
 def test_extract_resume_returns_text_and_ocr_status(monkeypatch) -> None:
@@ -35,6 +42,25 @@ def test_extract_resume_returns_text_and_ocr_status(monkeypatch) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "resume_text": "Extracted resume text with enough content for validation.",
+        "ocr_status": "not_used",
+    }
+
+
+def test_extract_job_description_returns_editable_text(monkeypatch) -> None:
+    monkeypatch.setattr(
+        routes,
+        "extract_text_from_resume_file",
+        lambda _filename, _content: ("Senior integration lead role with SQL and ETL requirements.", "not_used"),
+    )
+
+    response = client.post(
+        "/job-description/extract",
+        files={"job_description_file": ("job-description.docx", b"docx bytes", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "job_description_text": "Senior integration lead role with SQL and ETL requirements.",
         "ocr_status": "not_used",
     }
 
@@ -81,9 +107,9 @@ def test_resume_suggestions_streams_sse_and_persists_completed_markdown(monkeypa
     assert "event: status" in response.text
     assert "event: delta" in response.text
     assert "event: done" in response.text
-    assert "# Resume Tailoring Report" in response.text
+    assert "# Match score: 78/100" in response.text
     persist.assert_called_once()
-    assert "# Resume Tailoring Report" in persist.call_args.kwargs["generated_markdown"]
+    assert "# Match score: 78/100" in persist.call_args.kwargs["generated_markdown"]
 
 
 def test_cover_letter_streams_and_persists_completed_markdown(monkeypatch) -> None:
@@ -125,7 +151,7 @@ def test_stream_error_is_reported_and_partial_output_is_not_persisted(monkeypatc
     persist.assert_not_called()
 
 
-def test_resume_prompt_allows_whole_resume_changes_without_fabrication() -> None:
+def test_resume_prompt_requires_complete_rewrite_without_fabrication() -> None:
     messages = build_resume_suggestions_messages("resume", "job", "professional")
     system_prompt = messages[0]["content"]
 
@@ -133,6 +159,12 @@ def test_resume_prompt_allows_whole_resume_changes_without_fabrication() -> None
     assert "professional summary" in system_prompt
     assert "Do not limit recommendations to experience bullets" in system_prompt
     assert "Never invent qualifications" in system_prompt
+    assert "complete, ready-to-use rewrite of the entire resume" in system_prompt
+    assert "Group content that is already effective" in system_prompt
+    assert "close to the original resume's overall length" in system_prompt
+    assert "Preserve clean page and" in system_prompt
+    assert "Complete tailored resume" in system_prompt
+    assert "# Match score: NN/100" in system_prompt
 
 
 def test_legacy_routes_are_removed() -> None:

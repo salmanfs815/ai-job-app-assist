@@ -8,6 +8,7 @@ from app.config import settings
 from app.db.repository import save_cover_letter, save_resume_suggestions
 from app.models.schemas import (
     CoverLetterRequest,
+    JobDescriptionExtractResponse,
     ResumeExtractResponse,
     ResumeSuggestionsRequest,
 )
@@ -24,21 +25,21 @@ from app.services.streaming import (
 router = APIRouter()
 
 
-def _extract_resume_upload(resume_file: UploadFile) -> tuple[str, OcrStatus]:
-    content = resume_file.file.read()
+def _extract_document_upload(upload: UploadFile, document_name: str) -> tuple[str, OcrStatus]:
+    content = upload.file.read()
     if not content:
-        raise HTTPException(status_code=400, detail="Uploaded resume file is empty.")
+        raise HTTPException(status_code=400, detail=f"Uploaded {document_name} file is empty.")
     if len(content) > settings.max_upload_bytes:
         raise HTTPException(
             status_code=413,
-            detail=f"Resume file is too large. Max allowed size is {settings.max_upload_bytes} bytes.",
+            detail=f"{document_name.capitalize()} file is too large. Max allowed size is {settings.max_upload_bytes} bytes.",
         )
     try:
-        parsed, ocr_status = extract_text_from_resume_file(resume_file.filename or "", content)
+        parsed, ocr_status = extract_text_from_resume_file(upload.filename or "", content)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if len(parsed.strip()) < 20:
-        raise HTTPException(status_code=400, detail="Could not extract enough text from resume file.")
+        raise HTTPException(status_code=400, detail=f"Could not extract enough text from {document_name} file.")
     return parsed.strip(), ocr_status
 
 
@@ -110,8 +111,14 @@ def health() -> dict[str, str]:
 
 @router.post("/resume/extract", response_model=ResumeExtractResponse)
 def extract_resume(resume_file: UploadFile = File(...)) -> ResumeExtractResponse:
-    resume_text, ocr_status = _extract_resume_upload(resume_file)
+    resume_text, ocr_status = _extract_document_upload(resume_file, "resume")
     return ResumeExtractResponse(resume_text=resume_text, ocr_status=ocr_status)
+
+
+@router.post("/job-description/extract", response_model=JobDescriptionExtractResponse)
+def extract_job_description(job_description_file: UploadFile = File(...)) -> JobDescriptionExtractResponse:
+    job_description_text, ocr_status = _extract_document_upload(job_description_file, "job description")
+    return JobDescriptionExtractResponse(job_description_text=job_description_text, ocr_status=ocr_status)
 
 
 @router.post("/generate/resume-suggestions")

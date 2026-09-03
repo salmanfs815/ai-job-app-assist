@@ -33,7 +33,7 @@ def _extract_pdf_text(content: bytes) -> tuple[str, OcrStatus]:
     text_parts: list[str] = []
     for page in reader.pages:
         text_parts.append(page.extract_text() or "")
-    extracted = "\n".join(text_parts).strip()
+    extracted = _join_pdf_pages(text_parts)
     if extracted:
         return extracted, "not_used"
     ocr_text = _extract_pdf_text_with_ocr(content)
@@ -64,10 +64,17 @@ def _extract_pdf_text_with_ocr(content: bytes) -> str:
             bitmap = page.render(scale=2.0)
             pil_image: Image.Image = bitmap.to_pil()
             chunk = pytesseract.image_to_string(pil_image).strip()
-            if chunk:
-                text_chunks.append(chunk)
+            text_chunks.append(chunk)
 
-        return "\n".join(text_chunks).strip()
+        return _join_pdf_pages(text_chunks)
     except Exception:
         # OCR is best-effort; return empty so caller can raise a friendly extraction message.
         return ""
+
+
+def _join_pdf_pages(pages: list[str]) -> str:
+    """Keep PDF page boundaries so tailoring advice can preserve the source layout."""
+    populated = [(index, text.strip()) for index, text in enumerate(pages, start=1) if text.strip()]
+    if not populated:
+        return ""
+    return "\n\n".join(f"[Page {index}]\n{text}" for index, text in populated)

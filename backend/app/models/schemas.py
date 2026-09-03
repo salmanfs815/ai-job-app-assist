@@ -14,6 +14,11 @@ class ResumeExtractResponse(BaseModel):
     ocr_status: Literal["used", "failed", "not_used"]
 
 
+class JobDescriptionExtractResponse(BaseModel):
+    job_description_text: str
+    ocr_status: Literal["used", "failed", "not_used"]
+
+
 class CoverLetterRequest(BaseModel):
     resume_text: str = Field(min_length=20)
     job_description_text: str = Field(min_length=20)
