@@ -22,6 +22,41 @@ Open:
 - Frontend: http://localhost:3000
 - Backend docs: http://localhost:8000/docs
 
+## Automated testing and deployment
+
+GitHub Actions handles testing and deployment through two workflows:
+
+- **Frontend:** A push to `master` that changes `frontend/**` or the frontend workflow runs the Vitest suite, verifies the production build, and then deploys `frontend/dist` to Azure Static Web Apps. Pull requests targeting `master` run the same checks before creating or updating the Azure frontend preview environment. Pull-request checks intentionally remain unfiltered so `Test Frontend` can be a reliable required status check.
+- **Backend:** A push to `master` that changes `backend/**` or the backend workflow installs the development dependencies and runs pytest. Only after the tests pass does it build the backend container, push commit-specific and `latest` images to GitHub Container Registry, and deploy the commit-specific image to Azure Container Apps. Pull requests targeting `master` run the backend tests but do not publish or deploy an image.
+
+Consequently, a push containing both frontend and backend changes deploys both applications after their respective checks pass. A frontend-only push deploys only the frontend, and a backend-only push deploys only the backend.
+
+The deployment jobs depend on their test jobs, so a test or frontend build failure prevents the corresponding deployment. Required repository secrets are:
+
+- `AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_FIELD_0639E271E`
+- `AIJOBASSISTBACKEND_AZURE_CLIENT_ID`
+- `AIJOBASSISTBACKEND_AZURE_TENANT_ID`
+- `AIJOBASSISTBACKEND_AZURE_SUBSCRIPTION_ID`
+
+To prevent untested changes from being merged into `master`—rather than merely preventing
+their deployment—configure a GitHub branch ruleset for `master` under **Settings → Rules →
+Rulesets**. Require a pull request and require the `Test Frontend` and `Test Backend` status
+checks to pass. Both checks run on every pull request targeting `master`, so they can be made
+required without leaving path-filtered checks pending.
+
+You can also run the checks locally before pushing:
+
+```powershell
+cd backend
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+
+cd ../frontend
+npm ci
+npm test -- --maxWorkers=1
+npm run build
+```
+
 ## Development workflow with live reload
 
 For day-to-day development, run the frontend and backend locally so changes appear instantly in the browser.
