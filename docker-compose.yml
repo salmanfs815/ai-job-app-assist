@@ -1,11 +1,14 @@
-## Note: persistence is optional. Set PERSISTENCE_ENABLED=true and provide Cosmos or DATABASE_URL to enable.
+# Local stack. Works with no .env at all: mock LLM output, in-memory storage.
 services:
   backend:
     build:
       context: ./backend
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
+      ENVIRONMENT: ${ENVIRONMENT:-local}
+      FRONTEND_ORIGIN: http://localhost:${FRONTEND_PORT:-3000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
       PERSISTENCE_ENABLED: ${PERSISTENCE_ENABLED:-false}
@@ -13,6 +16,8 @@ services:
       COSMOS_KEY: ${COSMOS_KEY:-}
       COSMOS_DATABASE_NAME: ${COSMOS_DATABASE_NAME:-jobassist}
       COSMOS_CONTAINER_NAME: ${COSMOS_CONTAINER_NAME:-results}
+      # No reverse proxy locally: use the socket address for rate limiting.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-0}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
 

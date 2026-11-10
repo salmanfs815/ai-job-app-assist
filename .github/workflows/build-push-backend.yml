@@ -42,9 +42,34 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r backend/requirements-dev.txt
 
-      - name: Run tests
+      - name: Lint
         working-directory: backend
-        run: python -m pytest -q
+        run: |
+          python -m ruff check .
+          python -m ruff format --check .
+
+      - name: Type check
+        working-directory: backend
+        run: python -m mypy
+
+      - name: Run tests with coverage
+        working-directory: backend
+        run: python -m pytest --cov=app --cov-report=term --cov-report=xml
+
+      - name: Enforce coverage gate on domain, services and auth
+        working-directory: backend
+        run: python -m coverage report --include="app/domain/*,app/services/*,app/auth/*" --fail-under=85
+
+      - name: Add coverage summary
+        if: always()
+        working-directory: backend
+        run: |
+          {
+            echo "### Backend coverage"
+            echo '```'
+            python -m coverage report --skip-covered || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   build-and-push:
     needs: test-backend
