@@ -8,6 +8,7 @@ services:
         required: false
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-local}
+      AUTH_MODE: ${AUTH_MODE:-dev}
       FRONTEND_ORIGIN: http://localhost:${FRONTEND_PORT:-3000}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}

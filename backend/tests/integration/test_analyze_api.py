@@ -120,12 +120,15 @@ def test_extract_passes_ocr_settings_to_the_parser(make_client: ClientFactory, m
     assert seen == {"enable_ocr": False, "tesseract_cmd": "/opt/tesseract"}
 
 
+DEV_USER = {"X-Dev-User": "alice"}
+
+
 def test_resume_suggestions_streams_sse_and_persists_completed_markdown(make_client: ClientFactory) -> None:
-    client, container = make_client()
+    client, container = make_client(auth_mode="dev")
     results = InMemoryResultsRepository()
     container.results = results
 
-    response = client.post("/generate/resume-suggestions", json=analysis_payload())
+    response = client.post("/generate/resume-suggestions", json=analysis_payload(), headers=DEV_USER)
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
@@ -136,15 +139,16 @@ def test_resume_suggestions_streams_sse_and_persists_completed_markdown(make_cli
     assert "# Match score: 78/100" in response.text
     assert len(results.items) == 1
     assert "# Match score: 78/100" in results.items[0]["generated_markdown"]
+    assert results.items[0]["userId"] == "dev-alice"
 
 
 def test_cover_letter_streams_and_persists_completed_markdown(make_client: ClientFactory) -> None:
-    client, container = make_client()
+    client, container = make_client(auth_mode="dev")
     results = InMemoryResultsRepository()
     container.results = results
     payload = {**analysis_payload(), "company_name": "Example Company", "role_title": "Backend Engineer"}
 
-    response = client.post("/generate/cover-letter", json=payload)
+    response = client.post("/generate/cover-letter", json=payload, headers=DEV_USER)
 
     assert response.status_code == 200
     assert "event: status" in response.text
@@ -156,17 +160,29 @@ def test_cover_letter_streams_and_persists_completed_markdown(make_client: Clien
     assert results.items[0]["company_name"] == "Example Company"
 
 
+def test_guest_results_are_streamed_but_never_persisted(make_client: ClientFactory) -> None:
+    client, container = make_client()
+    results = InMemoryResultsRepository()
+    container.results = results
+
+    response = client.post("/generate/resume-suggestions", json=analysis_payload())
+
+    assert "event: done" in response.text
+    assert "Finalizing and saving" not in response.text
+    assert results.items == []
+
+
 def test_stream_error_is_reported_and_partial_output_is_not_persisted(make_client: ClientFactory) -> None:
     async def failing_stream(*_args: Any, **_kwargs: Any) -> AsyncIterator[LLMEvent]:
         yield TextDelta("Partial text")
         raise LLMStreamError("Temporary upstream failure", retryable=True)
 
-    client, container = make_client()
+    client, container = make_client(auth_mode="dev")
     results = InMemoryResultsRepository()
     container.results = results
     container.llm.stream_markdown = failing_stream  # type: ignore[method-assign]
 
-    response = client.post("/generate/resume-suggestions", json=analysis_payload())
+    response = client.post("/generate/resume-suggestions", json=analysis_payload(), headers=DEV_USER)
 
     assert "event: error" in response.text
     assert '"retryable": true' in response.text

@@ -6,6 +6,7 @@ loop is never blocked. Documents store ``userId`` as the partition key (see ADR 
 
 import asyncio
 import logging
+import uuid
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any
@@ -46,7 +47,7 @@ class CosmosContainers:
         return self._containers[name]
 
 
-async def _run[T](operation: Callable[[], T]) -> T:
+async def run_blocking[T](operation: Callable[[], T]) -> T:
     """Run a blocking SDK call in a thread and translate infrastructure failures."""
     try:
         return await asyncio.to_thread(operation)
@@ -97,16 +98,18 @@ class CosmosUsageRepository:
 
     async def get(self, owner_id: str, day: date) -> UsageRecord | None:
         try:
-            document = await _run(lambda: self._container.read_item(item=day.isoformat(), partition_key=owner_id))
+            document = await run_blocking(
+                lambda: self._container.read_item(item=day.isoformat(), partition_key=owner_id)
+            )
         except CosmosResourceNotFoundError as exc:
-            if _is_missing_container(exc):
+            if is_missing_container(exc):
                 raise RepositoryUnavailableError(f"Cosmos container '{self._name}' does not exist") from exc
             return None
         return self._from_document(document)
 
     async def create(self, record: UsageRecord) -> UsageRecord:
         try:
-            document = await _run(lambda: self._container.create_item(body=self._to_document(record)))
+            document = await run_blocking(lambda: self._container.create_item(body=self._to_document(record)))
         except CosmosResourceExistsError as exc:
             raise ConcurrencyError("usage record already exists") from exc
         except CosmosResourceNotFoundError as exc:
@@ -115,7 +118,7 @@ class CosmosUsageRepository:
 
     async def replace(self, record: UsageRecord) -> UsageRecord:
         try:
-            document = await _run(
+            document = await run_blocking(
                 lambda: self._container.replace_item(
                     item=record.day.isoformat(),
                     body=self._to_document(record),
@@ -142,7 +145,7 @@ class CosmosUsageRepository:
                 container.delete_item(item=item_id, partition_key=owner_id)
             return len(ids)
 
-        return await _run(_delete)
+        return await run_blocking(_delete)
 
 
 class CosmosResultsRepository:
@@ -158,7 +161,7 @@ class CosmosResultsRepository:
 
     async def _save(self, document: dict[str, Any]) -> None:
         try:
-            await _run(lambda: self._container.upsert_item(body=document))
+            await run_blocking(lambda: self._container.upsert_item(body=document))
         except Exception:
             # Content is deliberately not logged.
             logger.exception("Failed to persist %s result to Cosmos DB.", document.get("type"))
@@ -167,7 +170,8 @@ class CosmosResultsRepository:
     def _base(kind: str, id_prefix: str, user_id: str | None) -> dict[str, Any]:
         now = datetime.now(UTC)
         document: dict[str, Any] = {
-            "id": f"{id_prefix}-{now.timestamp()}",
+            # The random suffix keeps two results created in the same clock tick from overwriting each other.
+            "id": f"{id_prefix}-{now.timestamp()}-{uuid.uuid4().hex[:8]}",
             "type": kind,
             "created_at": now.isoformat(),
         }
@@ -225,10 +229,10 @@ class CosmosResultsRepository:
                 container.delete_item(item=item["id"], partition_key=item["type"])
             return len(items)
 
-        return await _run(_delete)
+        return await run_blocking(_delete)
 
 
-def _is_missing_container(exc: CosmosResourceNotFoundError) -> bool:
+def is_missing_container(exc: CosmosResourceNotFoundError) -> bool:
     """A 404 for a document and a 404 for the whole container look alike; tell them apart."""
     if getattr(exc, "sub_status", None) == 1003:  # "Owner resource does not exist"
         return True
