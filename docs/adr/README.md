@@ -8,7 +8,7 @@ next number; a changed decision gets a new record that supersedes the old one.
 | [0001](0001-authentication-provider.md) | Microsoft Entra External ID for user sign-in | Accepted |
 | [0002](0002-guest-mode.md) | Guest mode for the original tool | Accepted |
 | [0003](0003-rate-limiting-and-spend-protection.md) | Rate limiting and LLM spend protection | Accepted |
-| [0004](0004-cosmos-partitioning-and-throughput.md) | Cosmos DB partitioning and capacity mode | Accepted (capacity mode pending owner decision) |
+| [0004](0004-cosmos-partitioning-and-throughput.md) | Cosmos DB partitioning and capacity mode (serverless) | Accepted |
 | 0005 | Watcher pushes postings to the API instead of sharing a database | Planned (Phase 2) |
 | [0006](0006-service-to-service-auth.md) | HMAC request signing between the watcher and the API | Proposed |
 | 0007 | Deterministic matching and skill extraction (no LLM cost) | Planned (Phase 2–3) |

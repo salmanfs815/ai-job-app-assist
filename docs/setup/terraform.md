@@ -63,15 +63,19 @@ and Container Apps secrets during plan. It needs nothing at subscription scope.
    `7 to import, 0 to add, 0 to change, 0 to destroy`; approve the apply. Verified locally
    against production on 2026-11-09 with exactly that result.
 2. **Phase 1 changes.** Set the repository variable `TF_ENABLE_PHASE1=true` and run the
-   workflow (or push any `infra/azure` change). Expected plan: `4 to add, 1 to change,
-   0 to destroy`:
+   workflow (or push any `infra/azure` change). Expected plan: `5 to add, 1 to change,
+   0 to destroy` (verified with a read-only plan on 2026-11-09):
    - Cosmos containers `users` (`/id`), `resumes` (`/userId`), `usage` (`/userId`, TTL on);
    - a random IP-hash salt;
+   - a monthly budget alert on the resource group (default 2 in the billing currency) that
+     emails the resource group's Owners at 50% actual, 100% forecast and 100% actual spend.
+     To add other addresses, set the secret `BUDGET_ALERT_EMAILS` to a JSON list such as
+     `["you@example.com"]`;
    - Container App: auth, guest-mode and limit settings, the salt as a secret, and
      `maxReplicas` 2 → 1.
 
-   Creating containers on the serverless account costs nothing until they are used (see
-   ADR 0004).
+   Creating containers on the serverless account costs nothing until they are used, and
+   budgets are free (see ADR 0004).
 3. **Sign-in.** After `docs/setup/entra-external-id.md`, set the `ENTRA_*` variables; the next
    plan adds the three `ENTRA_*` settings to the API.
 

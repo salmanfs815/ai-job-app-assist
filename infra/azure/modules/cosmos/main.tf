@@ -66,7 +66,9 @@ resource "azurerm_cosmosdb_account" "main" {
     storage_redundancy  = "Geo"
   }
 
-  # Account-wide cap on RU/s: a hard ceiling on what a traffic spike can cost.
+  # Matches the live account. The total throughput limit only applies to provisioned
+  # throughput; Microsoft documents it as unavailable on serverless accounts, so this value
+  # does not cap serverless spend. The cost guard is the budget alert in budget.tf (ADR 0004).
   capacity {
     total_throughput_limit = 4000
   }

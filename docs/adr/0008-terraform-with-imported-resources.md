@@ -22,8 +22,8 @@ without recreating anything that serves the live demo.
   **7 to import, 0 to add, 0 to change, 0 to destroy**.
 - **Two-step rollout.** `enable_phase1 = false` (default) is the import-only first apply.
   Setting it to `true` (repository variable `TF_ENABLE_PHASE1`) produces a second, separately
-  reviewed plan: 3 new containers and a salt (4 to add) and 1 in-place update of the Container
-  App (new settings, `maxReplicas` 2 → 1). Nothing is destroyed.
+  reviewed plan: 3 new containers, a salt and a budget alert (5 to add) and 1 in-place update
+  of the Container App (new settings, `maxReplicas` 2 → 1). Nothing is destroyed.
 - **Boundary with the app workflows.** Terraform owns configuration (settings, secrets, scale,
   probes, ingress). The backend workflow only rolls out new images; Terraform ignores
   `template.container.image`. The frontend workflow only uploads build output.

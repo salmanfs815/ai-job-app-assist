@@ -37,6 +37,8 @@ env:
   TF_VAR_subscription_id: ${{ secrets.AIJOBASSISTBACKEND_AZURE_SUBSCRIPTION_ID }}
   TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
   TF_VAR_enable_phase1: ${{ vars.TF_ENABLE_PHASE1 || 'false' }}
+  # Optional JSON list of extra budget-alert addresses, e.g. ["me@example.com"]; Owners are always notified.
+  TF_VAR_budget_alert_emails: ${{ secrets.BUDGET_ALERT_EMAILS || '[]' }}
   TF_VAR_entra_tenant_id: ${{ vars.ENTRA_TENANT_ID }}
   TF_VAR_entra_tenant_subdomain: ${{ vars.ENTRA_TENANT_SUBDOMAIN }}
   TF_VAR_entra_api_client_id: ${{ vars.ENTRA_API_CLIENT_ID }}
