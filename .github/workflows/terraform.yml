@@ -65,11 +65,47 @@ jobs:
           terraform init -backend=false
           terraform validate
 
+  # Plans and applies need HCP Terraform and secrets that are set up once by hand
+  # (docs/setup/terraform.md). Until then both jobs are skipped with a notice instead of failing.
+  config:
+    name: Terraform configuration check
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          HAS_ORG: ${{ vars.TF_CLOUD_ORGANIZATION != '' }}
+          HAS_WORKSPACE: ${{ vars.TF_WORKSPACE != '' }}
+          HAS_TOKEN: ${{ secrets.TF_API_TOKEN != '' }}
+          HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: |
+          missing=()
+          [ "$HAS_ORG" = "true" ] || missing+=("variable TF_CLOUD_ORGANIZATION")
+          [ "$HAS_WORKSPACE" = "true" ] || missing+=("variable TF_WORKSPACE")
+          [ "$HAS_TOKEN" = "true" ] || missing+=("secret TF_API_TOKEN")
+          [ "$HAS_OPENAI_KEY" = "true" ] || missing+=("secret OPENAI_API_KEY")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            list=$(IFS=', '; echo "${missing[*]}")
+            echo "::notice title=Terraform plan/apply skipped::Not configured yet (missing: ${list}). See docs/setup/terraform.md."
+            {
+              echo "### Terraform plan and apply skipped"
+              echo "HCP Terraform is not configured yet. Missing: ${list}."
+              echo "Follow docs/setup/terraform.md, then re-run this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   plan:
     name: Terraform plan
-    needs: check
+    needs: [check, config]
     # Fork PRs get no OIDC token or secrets, so they cannot plan against production.
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      needs.config.outputs.ready == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -142,8 +178,11 @@ jobs:
 
   apply:
     name: Terraform apply
-    needs: check
-    if: github.ref == 'refs/heads/master' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs: [check, config]
+    if: >-
+      needs.config.outputs.ready == 'true' &&
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     # Required reviewers on this environment gate every apply.
     environment: production
