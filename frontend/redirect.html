@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Signing you in…</title>
+  </head>
+  <body>
+    <!--
+      MSAL Browser v5 redirect bridge. Microsoft Entra sends the sign-in response here and
+      this page hands it back to the app. It must be registered as the SPA redirect URI and
+      must not be served with a Cross-Origin-Opener-Policy header.
+    -->
+    <p>Signing you in…</p>
+    <script type="module">
+      import { broadcastResponseToMainFrame } from "@azure/msal-browser/redirect-bridge";
+
+      broadcastResponseToMainFrame().catch((error) => {
+        console.error("Sign-in response could not be delivered:", error);
+        document.querySelector("p").textContent = "Sign-in could not be completed. Close this tab and try again.";
+      });
+    </script>
+  </body>
+</html>

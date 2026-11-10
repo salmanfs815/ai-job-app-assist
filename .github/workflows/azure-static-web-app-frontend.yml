@@ -31,6 +31,12 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install dependencies
         run: npm ci
+      - name: Type check
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Check formatting
+        run: npm run format:check
       - name: Run tests
         run: npm test -- --maxWorkers=1
       - name: Verify production build
@@ -62,6 +68,12 @@ jobs:
         env:
           VITE_API_BASE_URL: https://ai-job-assist-backend.thankfulpond-5f7d0b4f.westus2.azurecontainerapps.io
           VITE_MAX_UPLOAD_BYTES: 5242880
+          # Sign-in stays off (guest-only demo) until these repository variables are set.
+          # See docs/setup/entra-external-id.md.
+          VITE_AUTH_MODE: ${{ vars.VITE_AUTH_MODE }}
+          VITE_ENTRA_TENANT_SUBDOMAIN: ${{ vars.VITE_ENTRA_TENANT_SUBDOMAIN }}
+          VITE_ENTRA_SPA_CLIENT_ID: ${{ vars.VITE_ENTRA_SPA_CLIENT_ID }}
+          VITE_ENTRA_API_SCOPE: ${{ vars.VITE_ENTRA_API_SCOPE }}
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
