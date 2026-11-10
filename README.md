@@ -1,235 +1,184 @@
 # AI Job Application Assistant
 
-A full-stack application that helps automate and improve the process of tailoring job applications by aligning resumes with job descriptions using LLMs.
+Tailor your resume to a job description in seconds. Paste or upload a resume and a job
+posting, and get a candid match score, specific rewrites that never invent experience, and a
+cover letter draft, streamed as they are written. Sign in to keep several resume versions and
+get a larger daily allowance.
 
-## Quick Start
+**Live demo:** <https://agreeable-field-0639e271e.7.azurestaticapps.net> (no account needed)
+· **Companion service:** `job-posting-watcher` (ingests postings from public job boards; Phase 2)
 
-1. Copy the environment template:
-   ```bash
-   cp .env.example .env
-   ```
-2. Add your OpenAI API key to `.env`.
-3. For a simple local run without persistence, keep:
-   ```env
-   PERSISTENCE_ENABLED=false
-   ```
-4. Start the app (containers):
-   ```bash
-   docker compose up --build
-   ```
+> Status: Phase 1 of 3 (accounts, spend protection, infrastructure as code). Screenshots and a
+> short demo GIF arrive with the Phase 3 UI pass.
 
-Open:
-- Frontend: http://localhost:3000
-- Backend docs: http://localhost:8000/docs
+## What you can do
 
-## Automated testing and deployment
+- **Analyze a resume** against a job description: match score, strengths and gaps,
+  section-by-section feedback, and a complete tailored rewrite.
+- **Draft a cover letter** for the same role.
+- **Upload PDF or DOCX** (scanned PDFs are read with OCR) or paste text; edit before generating.
+- **Save resumes** (signed in): keep versions, choose a default, reuse without re-uploading.
+- **Stay in control**: see today's remaining generations; delete your account and everything
+  saved with it from Settings.
 
-GitHub Actions handles testing and deployment through two workflows:
+## How it works
 
-- **Frontend:** A push to `master` that changes `frontend/**` or the frontend workflow runs the Vitest suite, verifies the production build, and then deploys `frontend/dist` to Azure Static Web Apps. Pull requests targeting `master` run the same checks before creating or updating the Azure frontend preview environment. Pull-request checks intentionally remain unfiltered so `Test Frontend` can be a reliable required status check.
-- **Backend:** A push to `master` that changes `backend/**` or the backend workflow installs the development dependencies and runs pytest. Only after the tests pass does it build the backend container, push commit-specific and `latest` images to GitHub Container Registry, and deploy the commit-specific image to Azure Container Apps. Pull requests targeting `master` run the backend tests but do not publish or deploy an image.
-
-Consequently, a push containing both frontend and backend changes deploys both applications after their respective checks pass. A frontend-only push deploys only the frontend, and a backend-only push deploys only the backend.
-
-The deployment jobs depend on their test jobs, so a test or frontend build failure prevents the corresponding deployment. Required repository secrets are:
-
-- `AZURE_STATIC_WEB_APPS_API_TOKEN_AGREEABLE_FIELD_0639E271E`
-- `AIJOBASSISTBACKEND_AZURE_CLIENT_ID`
-- `AIJOBASSISTBACKEND_AZURE_TENANT_ID`
-- `AIJOBASSISTBACKEND_AZURE_SUBSCRIPTION_ID`
-
-To prevent untested changes from being merged into `master`—rather than merely preventing
-their deployment—configure a GitHub branch ruleset for `master` under **Settings → Rules →
-Rulesets**. Require a pull request and require the `Test Frontend` and `Test Backend` status
-checks to pass. Both checks run on every pull request targeting `master`, so they can be made
-required without leaving path-filtered checks pending.
-
-You can also run the checks locally before pushing:
-
-```powershell
-cd backend
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-
-cd ../frontend
-npm ci
-npm test -- --maxWorkers=1
-npm run build
+```mermaid
+flowchart LR
+  U[Browser] -->|HTTPS| SWA[Static Web App<br/>React + TypeScript]
+  U <-->|Sign-in, PKCE| ENTRA[Entra External ID]
+  SWA -->|Bearer token or guest| API[FastAPI<br/>Container Apps]
+  API -->|JWKS| ENTRA
+  API --> COSMOS[(Cosmos DB)]
+  API -->|streamed completions| OPENAI[OpenAI]
+  W[job-posting-watcher<br/>Phase 2] -.->|signed requests| API
 ```
 
-## Development workflow with live reload
+1. The browser sends the resume and job description to the API (signed in or as a guest).
+2. The API checks the per-IP rate limit, the caller's daily quota, and the global daily budget.
+3. It streams the model's Markdown back over Server-Sent Events and records token usage.
+4. Signed-in users' results are stored; guest results are not.
 
-For day-to-day development, run the frontend and backend locally so changes appear instantly in the browser.
+---
 
-### 1. Backend (FastAPI) with auto-reload
+## For engineers
+
+### Repository layout
+
+```
+backend/            FastAPI app (Python 3.12)
+  app/core/         settings, problem+json errors, logging, client IP
+  app/auth/         token validation (Entra), dev auth, principals
+  app/api/          routers, schemas, middleware, dependency wiring
+  app/domain/       pure rules: rate limiting, pricing, usage, resumes, users
+  app/services/     use cases: quotas & budget, resumes, accounts
+  app/repositories/ interfaces + in-memory and Cosmos implementations
+  app/integrations/ OpenAI streaming client (with mock mode)
+  app/parsing/      PDF/DOCX extraction with OCR fallback
+  tests/unit, tests/integration
+frontend/           React 19 + TypeScript + Vite, Tailwind, Radix UI, TanStack Query, MSAL
+infra/azure         Terraform for Azure (imports the existing resources)
+infra/entra         Terraform for the External ID app registrations
+docs/adr            architecture decision records
+docs/setup          setup guides
+```
+
+Rules the code follows: routers stay thin; `domain/` has no FastAPI or Cosmos imports; every
+repository has an in-memory implementation used by tests and local mode.
+
+### Run it locally (mock mode, 3 commands)
+
 ```bash
-cd backend
-py -3 -m venv .venv
-\.venv\Scripts\Activate.ps1   # Windows PowerShell
-pip install -r requirements.txt
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+git clone https://github.com/salmanfs815/ai-job-app-assist.git
 ```
 
-Set `PERSISTENCE_ENABLED=false` (default) in `.env` to disable persistence, or set it to `true` and provide Cosmos connection values.
-
-### 2. Frontend (React + Vite) with HMR
 ```bash
-cd frontend
-npm install
-npm run dev -- --host 0.0.0.0 --port 3000
+cd ai-job-app-assist
 ```
 
-Open `http://localhost:3000` to see the app. Vite provides hot module replacement for frontend changes; `uvicorn --reload` reloads backend on Python file changes.
-
-### Notes about persistence
-- Persistence is optional and disabled by default to keep local development simple and inexpensive.
-- When `PERSISTENCE_ENABLED=true`, the app uses Azure Cosmos DB (NoSQL) for storing JSON results. Configure the Cosmos variables in `.env`.
-
-## Persistence and Azure Cosmos DB
-
-The app supports optional persistence through Azure Cosmos DB for NoSQL. To enable Cosmos persistence, set:
-```env
-PERSISTENCE_ENABLED=true
-COSMOS_ENDPOINT=https://<your-account>.documents.azure.com:443/
-COSMOS_KEY=your_cosmos_key
-COSMOS_DATABASE_NAME=jobassist
-COSMOS_CONTAINER_NAME=results
+```bash
+docker compose up --build
 ```
 
-When persistence is disabled, the app works normally and simply skips saving analysis and cover-letter results.
+Open <http://localhost:3000>. No OpenAI key, Azure account or identity provider is needed:
+output is deterministic sample text and **Sign in** uses a local "Demo User". Live-reload
+setup, the Cosmos emulator and every setting: [docs/setup/local-development.md](docs/setup/local-development.md).
 
-## Overview
+### Sign-in sequence
 
-Applying to jobs often requires manually tailoring resumes and writing cover letters for each role. This process is time-consuming, inconsistent, and prone to missing key requirements—especially those used in ATS (Applicant Tracking Systems).
-
-This project addresses that problem by building a system that:
-- Analyzes resume and job description alignment
-- Identifies matching and missing skills
-- Rewrites resume bullets for better alignment
-- Generates tailored cover letters
-
-## Motivation
-
-This project was built to explore how backend systems can leverage LLMs to solve real-world productivity problems—specifically, improving the efficiency and quality of job applications.
-
-It also serves as a deeper dive into:
-- processing unstructured data
-- designing reliable LLM-backed systems
-- building production-style backend services
-
-## Key Features
-
-### 1. Resume + Job Description Analysis
-
-- Accepts resume and job-description input (PDF/DOCX or text)
-- Parses and extracts structured content
-- Streams a Markdown tailoring report as it is generated
-- Suggests supported changes to titles, summaries, skills, experience, section order, wording, and ATS alignment
-
-### 2. Resume Bullet Optimization
-
-- Uses LLM pipelines to rewrite resume bullets
-- Aligns experience with job-specific requirements
-- Improves clarity and relevance for ATS and recruiters
-
-### 3. Cover Letter Generation
-
-- Generates tailored cover letters based on:
-  - resume content
-  - job description
-- Ensures consistency between resume and narrative
-- Streams the draft to the browser as it is generated
-
-### 4. File Parsing Pipeline
-
-- Supports PDF and DOCX resume and job-description uploads
-- Preserves PDF page markers to inform page-fit recommendations
-- Extracts and normalizes text for downstream processing
-- Handles unstructured input formats
-
-### 5. Robust LLM Integration
-
-- Structured prompting for consistent outputs
-- Response validation and parsing
-- Retry logic for API reliability
-- Logging for debugging and observability
-
-## System Architecture
-
-```
-Frontend (React - Vite)
-        ↓
-FastAPI Backend
-        ↓
-Processing Layer
-  - Resume parsing
-  - Job description analysis
-  - Prompt construction
-  - Response parsing
-        ↓
-OpenAI API (LLM)
-        ↓
-      Optional persistence: Azure Cosmos DB (NoSQL)
+```mermaid
+sequenceDiagram
+  participant B as Browser (MSAL)
+  participant E as Entra External ID
+  participant R as /redirect.html
+  participant A as API
+  B->>E: authorize (code + PKCE)
+  E->>R: redirect with code
+  R-->>B: hand back response (redirect bridge)
+  B->>E: redeem code
+  E-->>B: access token (scope access_as_user)
+  B->>A: GET /me (Bearer token)
+  A->>E: fetch signing keys (cached)
+  A->>A: check signature, issuer, audience, expiry, scope
+  A-->>B: profile (account created on first call)
 ```
 
-## Tech Stack
+### API
 
-**Backend**
-- Python
-- FastAPI
-- Optional persistence: Azure Cosmos DB (NoSQL)
+| Endpoint | Who | Notes |
+| --- | --- | --- |
+| `GET /health` | anyone | never rate limited |
+| `POST /resume/extract`, `POST /job-description/extract` | guest or user | multipart upload; text only is returned, files are discarded |
+| `POST /generate/resume-suggestions`, `POST /generate/cover-letter` | guest or user | SSE stream: `status`, `delta`, `done`, `error` |
+| `GET /quota` | guest or user | today's allowance and whether generation is available |
+| `GET /me`, `DELETE /me` | user | profile; delete the account and all its data |
+| `GET/POST /resumes`, `GET/PATCH/DELETE /resumes/{id}` | user | saved resume text and metadata |
 
-**Frontend**
-- React (Vite)
+Interactive docs: `/docs`. Errors are RFC 9457 `application/problem+json` with a stable
+`code`; `429` and `503` carry `Retry-After`. Reference: [docs/errors.md](docs/errors.md).
 
-**AI Integration**
-- OpenAI API (LLM)
+### Limits and spend protection
 
-**DevOps / Tooling**
-- Docker
-- Docker Compose
+| Layer | Default | When exceeded |
+| --- | --- | --- |
+| Per-IP token bucket (all endpoints) | burst 60, 1 req/s; uploads and generations cost 10 | `429` + `Retry-After` |
+| Generations per day | 3 per guest IP, 20 per user | `429` + `Retry-After` until 00:00 UTC |
+| Global LLM budget | USD 1.00 per UTC day (estimated from token usage) | `503` + `Retry-After`; non-LLM features keep working |
 
-## How It Works
+Design and trade-offs: [ADR 0003](docs/adr/0003-rate-limiting-and-spend-protection.md).
 
-1. User uploads or pastes a resume and job description (PDF/DOCX or text)
-2. Backend parses the resume and constructs Markdown-generation prompts.
-3. The LLM generates resume improvements or a tailored cover letter.
-4. Backend streams Markdown fragments to the frontend and persists completed results.
+### Data model (Cosmos DB for NoSQL)
 
-## API Endpoints
-- `GET /health`
-- `POST /resume/extract` (multipart form-data with `resume_file`)
-- `POST /job-description/extract` (multipart form-data with `job_description_file`)
-- `POST /generate/resume-suggestions` (JSON request; Server-Sent Events response)
-- `POST /generate/cover-letter` (JSON request; Server-Sent Events response)
+| Container | Partition key | Holds |
+| --- | --- | --- |
+| `users` | `/id` | one document per account |
+| `resumes` | `/userId` | extracted resume text and metadata (never the file) |
+| `usage` | `/userId` | one counter document per owner per UTC day; `userId = "global"` for the budget; per-item TTL |
+| `results` | `/type` | generated results of signed-in users (existing container) |
 
-The generation endpoints return `text/event-stream`. Event types are:
+Why these keys, and why the account is serverless today: [ADR 0004](docs/adr/0004-cosmos-partitioning-and-throughput.md).
 
-- `status`: immediate progress text and whether local demo output is active
-- `delta`: the next Markdown text fragment
-- `done`: successful completion
-- `error`: a safe error message plus `retryable` and `partial` flags
+### Testing and CI
 
-The frontend proxies all generation through FastAPI; the OpenAI API key is never sent to the browser. Streamed Markdown is rendered without enabling raw HTML.
+- Backend: ruff, mypy (strict on `domain`, `services`, `auth`), pytest with a coverage gate of
+  85% on `domain`, `services` and `auth` (currently 99%). Auth tests sign JWTs locally and
+  serve them from a fake JWKS.
+- Frontend: TypeScript strict, ESLint (with jsx-a11y), Prettier, Vitest + Testing Library.
+- Workflows: backend tests gate the image build and Container Apps rollout; frontend checks gate
+  the Static Web Apps deploy; Terraform is planned on PRs (plan posted as a comment) and applied
+  from `master` after approval on the `production` environment.
 
-### File reuse
+### Infrastructure as code
 
-When a PDF or DOCX is selected, the browser computes a SHA-256 hash and extracts it through the appropriate document endpoint. The extracted text is shown in its textarea so it can be reviewed or edited. Selecting the same file again in the same page session reuses an in-memory cache and skips upload, parsing, and OCR. The cache is cleared on refresh and is never written to browser storage.
+All Azure resources are in Terraform and were **imported**, not recreated: a read-only plan
+against production shows `7 to import, 0 to add, 0 to change, 0 to destroy`. Phase 1 changes
+land as a second, separately reviewed plan. Guide: [docs/setup/terraform.md](docs/setup/terraform.md);
+decision: [ADR 0008](docs/adr/0008-terraform-with-imported-resources.md).
 
-This optimization saves file-processing work, but not LLM input tokens: the resolved resume text is still included in every generation request.
+### Security and privacy
 
-## Notes
-- If OpenAI key is not set, backend uses deterministic mock output so the UI remains testable.
-- If an OpenAI request fails while a key is configured, the stream reports an error instead of silently substituting mock content.
-- Supported uploaded resume and job-description formats: `.pdf`, `.docx`.
-- Max upload size is configurable with `MAX_UPLOAD_BYTES` (default `5242880`, i.e. 5 MB).
-- OCR fallback for scanned PDFs is enabled by default (`ENABLE_PDF_OCR_FALLBACK=true`) and uses Tesseract.
-- Set `TESSERACT_CMD` only if your environment needs a custom Tesseract binary path.
+- **Stored:** account ID, email and display name from the identity provider; saved resume text;
+  generated results of signed-in users; daily usage counters.
+- **Not stored:** uploaded files, guest results, raw IP addresses (guests are counted by a
+  salted hash that expires after two days), passwords (handled by Entra External ID).
+- **Not logged:** resume or job-description text, tokens.
+- **Deleting your data:** Settings → Delete account removes resumes, results and usage records.
+- The OpenAI key never reaches the browser. Generated Markdown is rendered without raw HTML.
+- Development sign-in cannot be enabled outside `ENVIRONMENT=local`; the API refuses to start.
 
-## Future Improvements
+### Configuration
 
-- Better scoring algorithms for skill alignment
-- Support for multiple resume versions
-- Improved UI/UX for editing generated content
-- Deployment (cloud hosting)
-- Authentication and user accounts
+Every variable is documented in [`.env.example`](.env.example). Sign-in setup:
+[docs/setup/entra-external-id.md](docs/setup/entra-external-id.md).
+
+### Decisions
+
+See the [ADR index](docs/adr/README.md): auth provider, guest mode, rate limiting and spend
+protection, Cosmos partitioning, service-to-service auth, Terraform with imports.
+
+### Roadmap
+
+- **Phase 2:** watchlist of company job boards (Greenhouse, Lever, Ashby), ingestion from the
+  watcher, a feed of matching postings with on-demand scoring, baseline tracing.
+- **Phase 3:** application tracking, personal insights, admin analytics, accessibility and UI
+  polish, Playwright end-to-end tests, OpenTelemetry LLM spans.
