@@ -70,6 +70,10 @@ jobs:
   config:
     name: Terraform configuration check
     runs-on: ubuntu-latest
+    # No checkout here, so the workflow-wide working directory (infra/azure) does not exist.
+    defaults:
+      run:
+        working-directory: .
     outputs:
       ready: ${{ steps.check.outputs.ready }}
     steps:
