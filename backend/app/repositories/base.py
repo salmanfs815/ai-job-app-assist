@@ -7,7 +7,9 @@ Services depend on these protocols only. Each has an in-memory implementation
 from datetime import date
 from typing import Protocol
 
+from app.domain.resumes import Resume
 from app.domain.usage import UsageRecord
+from app.domain.users import User
 
 
 class RepositoryError(Exception):
@@ -56,5 +58,25 @@ class ResultsRepository(Protocol):
         tone: str,
         generated_text: str,
     ) -> None: ...
+
+    async def delete_for_user(self, user_id: str) -> int: ...
+
+
+class UserRepository(Protocol):
+    async def get(self, user_id: str) -> User | None: ...
+
+    async def upsert(self, user: User) -> User: ...
+
+    async def delete(self, user_id: str) -> bool: ...
+
+
+class ResumeRepository(Protocol):
+    async def list_for_user(self, user_id: str) -> list[Resume]: ...
+
+    async def get(self, user_id: str, resume_id: str) -> Resume | None: ...
+
+    async def upsert(self, resume: Resume) -> Resume: ...
+
+    async def delete(self, user_id: str, resume_id: str) -> bool: ...
 
     async def delete_for_user(self, user_id: str) -> int: ...

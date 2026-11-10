@@ -1,0 +1,221 @@
+name: Terraform (Azure)
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - "infra/azure/**"
+      - ".github/workflows/terraform.yml"
+  push:
+    branches: [master]
+    paths:
+      - "infra/azure/**"
+      - ".github/workflows/terraform.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One plan/apply at a time against the shared state.
+  group: terraform-azure
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  TF_VERSION: "1.17.1"
+  # HCP Terraform stores state only (workspace in "Local" execution mode).
+  TF_CLOUD_ORGANIZATION: ${{ vars.TF_CLOUD_ORGANIZATION }}
+  TF_WORKSPACE: ${{ vars.TF_WORKSPACE }}
+  TF_TOKEN_app_terraform_io: ${{ secrets.TF_API_TOKEN }}
+  # azurerm authenticates with GitHub's OIDC token (no stored Azure secret).
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.AIJOBASSISTBACKEND_AZURE_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.AIJOBASSISTBACKEND_AZURE_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.AIJOBASSISTBACKEND_AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_subscription_id: ${{ secrets.AIJOBASSISTBACKEND_AZURE_SUBSCRIPTION_ID }}
+  TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+  TF_VAR_enable_phase1: ${{ vars.TF_ENABLE_PHASE1 || 'false' }}
+  # Optional JSON list of extra budget-alert addresses, e.g. ["me@example.com"]; Owners are always notified.
+  TF_VAR_budget_alert_emails: ${{ secrets.BUDGET_ALERT_EMAILS || '[]' }}
+  TF_VAR_entra_tenant_id: ${{ vars.ENTRA_TENANT_ID }}
+  TF_VAR_entra_tenant_subdomain: ${{ vars.ENTRA_TENANT_SUBDOMAIN }}
+  TF_VAR_entra_api_client_id: ${{ vars.ENTRA_API_CLIENT_ID }}
+  TF_VAR_entra_api_app_id_uri: ${{ vars.ENTRA_API_APP_ID_URI }}
+
+defaults:
+  run:
+    working-directory: infra/azure
+
+jobs:
+  check:
+    name: Terraform fmt and validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+      - name: Format
+        run: terraform fmt -check -recursive
+        working-directory: infra
+      - name: Validate (no backend)
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  # Plans and applies need HCP Terraform and secrets that are set up once by hand
+  # (docs/setup/terraform.md). Until then both jobs are skipped with a notice instead of failing.
+  config:
+    name: Terraform configuration check
+    runs-on: ubuntu-latest
+    # No checkout here, so the workflow-wide working directory (infra/azure) does not exist.
+    defaults:
+      run:
+        working-directory: .
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          HAS_ORG: ${{ vars.TF_CLOUD_ORGANIZATION != '' }}
+          HAS_WORKSPACE: ${{ vars.TF_WORKSPACE != '' }}
+          HAS_TOKEN: ${{ secrets.TF_API_TOKEN != '' }}
+          HAS_OPENAI_KEY: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: |
+          missing=()
+          [ "$HAS_ORG" = "true" ] || missing+=("variable TF_CLOUD_ORGANIZATION")
+          [ "$HAS_WORKSPACE" = "true" ] || missing+=("variable TF_WORKSPACE")
+          [ "$HAS_TOKEN" = "true" ] || missing+=("secret TF_API_TOKEN")
+          [ "$HAS_OPENAI_KEY" = "true" ] || missing+=("secret OPENAI_API_KEY")
+          if [ ${#missing[@]} -eq 0 ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            list=$(IFS=', '; echo "${missing[*]}")
+            echo "::notice title=Terraform plan/apply skipped::Not configured yet (missing: ${list}). See docs/setup/terraform.md."
+            {
+              echo "### Terraform plan and apply skipped"
+              echo "HCP Terraform is not configured yet. Missing: ${list}."
+              echo "Follow docs/setup/terraform.md, then re-run this workflow."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  plan:
+    name: Terraform plan
+    needs: [check, config]
+    # Fork PRs get no OIDC token or secrets, so they cannot plan against production.
+    if: >-
+      needs.config.outputs.ready == 'true' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        run: terraform init
+      - name: Plan
+        id: plan
+        run: |
+          set -o pipefail
+          terraform plan -no-color -lock-timeout=5m -out=tfplan 2>&1 | tee plan.txt
+        continue-on-error: true
+      - name: Summarise plan
+        id: summary
+        run: |
+          {
+            echo 'summary<<EOF'
+            grep -E '^(Plan:|No changes\.|Error:)' plan.txt || echo 'Plan did not complete.'
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+          # Refuse to go further if the plan would destroy or replace anything.
+          if grep -qE 'must be replaced|will be destroyed' plan.txt; then
+            echo "::error::The plan destroys or replaces resources."
+            exit 1
+          fi
+      - name: Comment plan on the pull request
+        uses: actions/github-script@v7
+        env:
+          SUMMARY: ${{ steps.summary.outputs.summary }}
+          OUTCOME: ${{ steps.plan.outcome }}
+        with:
+          script: |
+            const fs = require("fs");
+            let plan = fs.readFileSync("infra/azure/plan.txt", "utf8");
+            const limit = 60000;
+            if (plan.length > limit) plan = plan.slice(0, limit) + "\n… (truncated, see the workflow log)";
+            const marker = "<!-- terraform-plan:azure -->";
+            const body = [
+              marker,
+              `### Terraform plan (infra/azure): ${process.env.OUTCOME}`,
+              "",
+              `**${process.env.SUMMARY.trim()}**`,
+              "",
+              "<details><summary>Full plan</summary>",
+              "",
+              "```hcl",
+              plan,
+              "```",
+              "</details>",
+            ].join("\n");
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number });
+            const existing = comments.find((c) => c.body?.startsWith(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+      - name: Fail if the plan failed
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+  apply:
+    name: Terraform apply
+    needs: [check, config]
+    if: >-
+      needs.config.outputs.ready == 'true' &&
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    # Required reviewers on this environment gate every apply.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+      - name: Init
+        run: terraform init
+      - name: Plan
+        run: |
+          set -o pipefail
+          terraform plan -no-color -lock-timeout=5m -out=tfplan 2>&1 | tee plan.txt
+          if grep -qE 'must be replaced|will be destroyed' plan.txt; then
+            echo "::error::The plan destroys or replaces resources. Refusing to apply."
+            exit 1
+          fi
+      - name: Apply
+        run: terraform apply -no-color -lock-timeout=5m tfplan
+      - name: Publish outputs
+        run: |
+          {
+            echo "### Terraform outputs"
+            echo '```'
+            terraform output -no-color
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

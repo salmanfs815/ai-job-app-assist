@@ -5,7 +5,9 @@ from datetime import date
 from itertools import count
 from typing import Any
 
+from app.domain.resumes import Resume
 from app.domain.usage import UsageRecord
+from app.domain.users import User
 from app.repositories.base import ConcurrencyError
 
 
@@ -107,3 +109,42 @@ class NoopResultsRepository:
 
     async def delete_for_user(self, user_id: str) -> int:
         return 0
+
+
+class InMemoryUserRepository:
+    def __init__(self) -> None:
+        self._users: dict[str, User] = {}
+
+    async def get(self, user_id: str) -> User | None:
+        return self._users.get(user_id)
+
+    async def upsert(self, user: User) -> User:
+        self._users[user.id] = user
+        return user
+
+    async def delete(self, user_id: str) -> bool:
+        return self._users.pop(user_id, None) is not None
+
+
+class InMemoryResumeRepository:
+    def __init__(self) -> None:
+        self._resumes: dict[tuple[str, str], Resume] = {}
+
+    async def list_for_user(self, user_id: str) -> list[Resume]:
+        return [resume for (owner, _), resume in self._resumes.items() if owner == user_id]
+
+    async def get(self, user_id: str, resume_id: str) -> Resume | None:
+        return self._resumes.get((user_id, resume_id))
+
+    async def upsert(self, resume: Resume) -> Resume:
+        self._resumes[(resume.user_id, resume.id)] = resume
+        return resume
+
+    async def delete(self, user_id: str, resume_id: str) -> bool:
+        return self._resumes.pop((user_id, resume_id), None) is not None
+
+    async def delete_for_user(self, user_id: str) -> int:
+        keys = [key for key in self._resumes if key[0] == user_id]
+        for key in keys:
+            del self._resumes[key]
+        return len(keys)

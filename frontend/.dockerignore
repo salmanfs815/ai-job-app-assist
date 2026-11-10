@@ -1,0 +1,6 @@
+# Dependencies are installed inside the image; never copy host binaries.
+node_modules/
+dist/
+coverage/
+.env
+.env.*

@@ -3,7 +3,7 @@ import logging
 
 from fastapi.testclient import TestClient
 
-from app.api.deps import get_quota_subject
+from app.api.deps import get_tool_caller
 from app.core.logging import JsonFormatter, configure_logging
 
 
@@ -37,7 +37,7 @@ def test_unhandled_errors_are_hidden_behind_a_generic_problem(client: TestClient
     def boom() -> None:
         raise RuntimeError("secret internal detail")
 
-    client.app.dependency_overrides[get_quota_subject] = boom  # type: ignore[attr-defined]
+    client.app.dependency_overrides[get_tool_caller] = boom  # type: ignore[attr-defined]
     quiet = TestClient(client.app, raise_server_exceptions=False)
 
     response = quiet.get("/quota")
