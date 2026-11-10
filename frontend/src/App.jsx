@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { describeApiError } from "./apiErrors";
 import { consumeEventStream, sha256File } from "./streaming";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
@@ -78,7 +79,7 @@ export default function App() {
         body: formData,
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(await extractApiError(response, `${isResume ? "Resume" : "Job description"} extraction failed`));
+      if (!response.ok) throw new Error(await describeApiError(response, `${isResume ? "Resume" : "Job description"} extraction failed`));
 
       const data = await response.json();
       const extractedText = isResume ? data.resume_text : data.job_description_text;
@@ -173,7 +174,7 @@ export default function App() {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      if (!response.ok) throw new Error(await extractApiError(response, "Generation failed"));
+      if (!response.ok) throw new Error(await describeApiError(response, "Generation failed"));
 
       await consumeEventStream(response, (event, data) => {
         if (event === "status") {
@@ -322,19 +323,6 @@ function MarkdownResult({ title, value, busy, ocrStatus }) {
       </div>
     </section>
   );
-}
-
-async function extractApiError(response, fallback) {
-  try {
-    const data = await response.json();
-    if (typeof data?.detail === "string" && data.detail.trim()) return data.detail;
-    if (Array.isArray(data?.detail) && data.detail.length > 0) {
-      return data.detail.map((detail) => detail?.msg || JSON.stringify(detail)).join("; ");
-    }
-  } catch (_error) {
-    // Use the caller's fallback for non-JSON errors.
-  }
-  return fallback;
 }
 
 function validateFileSize(file) {
