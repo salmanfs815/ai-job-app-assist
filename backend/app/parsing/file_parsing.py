@@ -2,25 +2,29 @@ from io import BytesIO
 from pathlib import Path
 from typing import Literal
 
-from docx import Document
-from pypdf import PdfReader
 import pypdfium2 as pdfium
 import pytesseract
+from docx import Document
 from PIL import Image
-
-from app.config import settings
+from pypdf import PdfReader
 
 ALLOWED_EXTENSIONS = {".pdf", ".docx"}
 OcrStatus = Literal["not_used", "used", "failed"]
 
 
-def extract_text_from_resume_file(filename: str, content: bytes) -> tuple[str, OcrStatus]:
+def extract_text_from_resume_file(
+    filename: str,
+    content: bytes,
+    *,
+    enable_ocr: bool = True,
+    tesseract_cmd: str = "",
+) -> tuple[str, OcrStatus]:
     ext = Path(filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise ValueError("Unsupported resume format. Please upload a PDF or DOCX file.")
 
     if ext == ".pdf":
-        return _extract_pdf_text(content)
+        return _extract_pdf_text(content, enable_ocr=enable_ocr, tesseract_cmd=tesseract_cmd)
 
     if ext == ".docx":
         return _extract_docx_text(content), "not_used"
@@ -28,7 +32,7 @@ def extract_text_from_resume_file(filename: str, content: bytes) -> tuple[str, O
     raise ValueError("Unsupported resume format.")
 
 
-def _extract_pdf_text(content: bytes) -> tuple[str, OcrStatus]:
+def _extract_pdf_text(content: bytes, *, enable_ocr: bool, tesseract_cmd: str) -> tuple[str, OcrStatus]:
     reader = PdfReader(BytesIO(content))
     text_parts: list[str] = []
     for page in reader.pages:
@@ -36,7 +40,9 @@ def _extract_pdf_text(content: bytes) -> tuple[str, OcrStatus]:
     extracted = _join_pdf_pages(text_parts)
     if extracted:
         return extracted, "not_used"
-    ocr_text = _extract_pdf_text_with_ocr(content)
+    if not enable_ocr:
+        return "", "failed"
+    ocr_text = _extract_pdf_text_with_ocr(content, tesseract_cmd=tesseract_cmd)
     if ocr_text:
         return ocr_text, "used"
     return "", "failed"
@@ -48,12 +54,9 @@ def _extract_docx_text(content: bytes) -> str:
     return "\n".join(paragraphs).strip()
 
 
-def _extract_pdf_text_with_ocr(content: bytes) -> str:
-    if not settings.enable_pdf_ocr_fallback:
-        return ""
-
-    if settings.tesseract_cmd.strip():
-        pytesseract.pytesseract.tesseract_cmd = settings.tesseract_cmd.strip()
+def _extract_pdf_text_with_ocr(content: bytes, *, tesseract_cmd: str = "") -> str:
+    if tesseract_cmd.strip():
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd.strip()
 
     try:
         pdf = pdfium.PdfDocument(BytesIO(content))

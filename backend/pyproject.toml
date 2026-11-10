@@ -1,0 +1,52 @@
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["."]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "C4", "RUF", "ASYNC", "S", "PT"]
+ignore = [
+    "B008",   # FastAPI's File()/Depends() defaults are evaluated per request by design
+    "RUF001", # the UI copy intentionally uses typographic characters
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "RUF059"]
+"app/integrations/llm.py" = ["E501"]  # canned sample output
+"app/domain/prompts.py" = ["E501"]  # prompt text is kept byte-for-byte
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = true
+check_untyped_defs = true
+no_implicit_optional = true
+
+[[tool.mypy.overrides]]
+module = ["app.domain.*", "app.services.*", "app.auth.*"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["pytesseract.*", "pypdfium2.*", "docx.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q --strict-markers"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ['if TYPE_CHECKING:', '^\s*\.\.\.$']
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]

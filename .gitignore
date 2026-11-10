@@ -36,3 +36,16 @@ Thumbs.db
 
 # Docker / local volumes
 pgdata/
+
+# Test and coverage output
+.coverage
+coverage.xml
+htmlcov/
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+*.auto.tfvars
