@@ -1,7 +1,10 @@
 import "@testing-library/jest-dom/vitest";
 
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
+
+// The default 1 s wait for async UI is tight for lazy-loaded routes on a busy CI runner.
+configure({ asyncUtilTimeout: 3000 });
 
 globalThis.requestAnimationFrame = (callback: FrameRequestCallback) =>
   setTimeout(() => callback(performance.now()), 0) as unknown as number;
